@@ -1,0 +1,78 @@
+const Database = require('better-sqlite3');
+const db = new Database('./database/users.sqlite');
+
+/* -----------------------------------------------------
+   REGISTRATION TABLE
+----------------------------------------------------- */
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS registrations (
+        user_id TEXT PRIMARY KEY,
+        type TEXT,
+        train_number TEXT,
+        preferred_name TEXT
+    )
+`).run();
+
+/* -----------------------------------------------------
+   DISPATCH PANEL TABLES
+----------------------------------------------------- */
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS dispatch_embed (
+        id INTEGER PRIMARY KEY,
+        message_id TEXT
+    )
+`).run();
+
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS dispatch_settings (
+        id INTEGER PRIMARY KEY,
+        server_name TEXT,
+        server_password TEXT,
+        remote_link TEXT,
+        remote_password TEXT
+    )
+`).run();
+
+db.prepare(`
+    INSERT OR IGNORE INTO dispatch_settings 
+    (id, server_name, server_password, remote_link, remote_password)
+    VALUES (1, 'Not set', 'Not set', 'Not set', 'Not set')
+`).run();
+
+/* -----------------------------------------------------
+   NO-OP EMBED
+----------------------------------------------------- */
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS no_op_embed (
+        id INTEGER PRIMARY KEY,
+        message_id TEXT
+    )
+`).run();
+
+/* -----------------------------------------------------
+   MOVEMENT BOARD TABLES
+----------------------------------------------------- */
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS movements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        operator_train TEXT,
+        departing TEXT,
+        destination TEXT,
+        cleared_to TEXT,
+        completed INTEGER DEFAULT 0,
+        completed_at TEXT
+    )
+`).run();
+
+// Safe migrations
+try { db.prepare(`ALTER TABLE movements ADD COLUMN completed INTEGER DEFAULT 0`).run(); } catch {}
+try { db.prepare(`ALTER TABLE movements ADD COLUMN completed_at TEXT`).run(); } catch {}
+
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS movement_board (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        message_id TEXT
+    )
+`).run();
+
+module.exports = db;
