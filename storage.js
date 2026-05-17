@@ -196,6 +196,13 @@ function deleteAssignment(guildId, trainNumber) {
     `).run(guildId, trainNumber);
 }
 
+/**
+ * Wipe all assignments for a guild — called at end of ops.
+ */
+function clearAllAssignments(guildId) {
+    db.prepare(`DELETE FROM assignments WHERE guild_id = ?`).run(guildId);
+}
+
 // ===============================
 // DV SETTINGS
 // ===============================
@@ -337,6 +344,7 @@ module.exports = {
     getAssignmentByTrain,
     setAssignment,
     deleteAssignment,
+    clearAllAssignments,
     getTrainBoardMessageId,
     setTrainBoardMessageId,
     getDvSettings,

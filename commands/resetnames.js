@@ -54,6 +54,7 @@ module.exports = {
         }
 
         storage.clearAllTrainNumbers();
+        storage.clearAllAssignments(guild.id);
 
         return { reset, failed, sessionClosed: sessionId !== null };
     }
