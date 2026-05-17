@@ -15,9 +15,6 @@ module.exports = {
             return interaction.editReply('❌ No crew members are registered yet.');
         }
 
-        // Bulk-fetch all guild members so we can filter out anyone who left
-        const guildMembers = await interaction.guild.members.fetch();
-
         const trainmasters = [];
         const dispatchers  = [];
         const yardCrew     = [];
@@ -25,7 +22,8 @@ module.exports = {
         const unassigned   = [];
 
         for (const row of crew) {
-            if (!guildMembers.has(row.userId)) continue; // not in server
+            const member = await interaction.guild.members.fetch(row.userId).catch(() => null);
+            if (!member) continue; // not in server — skip silently
 
             const hasTrainNumber = row.trainNumber && row.trainNumber.trim() !== '';
 
