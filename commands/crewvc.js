@@ -38,6 +38,12 @@ module.exports = {
 
         storage.addCrewVC(guildId, channel.id, crewNumber);
 
+        // Auto-rename if the creator already has a train number
+        const crew = storage.getCrewRaw(interaction.user.id);
+        if (crew?.train_number) {
+            await channel.setName(`(${crew.train_number}) | Crew ${crewNumber}`).catch(() => {});
+        }
+
         // Move the creator in if they're already in voice (Discord requires this)
         const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
         let moved = false;

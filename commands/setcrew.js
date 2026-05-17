@@ -100,6 +100,8 @@ module.exports = {
                 await guildMember.setNickname(buildNickname(type, trainNumber, preferredName)).catch(() => {});
                 if (guildMember.voice.channel) {
                     enrollIfSessionActive(userIdToEdit, interaction.guild.id, type, trainNumber);
+                    const vc = storage.getCrewVCByChannel(guildMember.voice.channel.id);
+                    if (vc) await guildMember.voice.channel.setName(`(${trainNumber}) | Crew ${vc.crew_number}`).catch(() => {});
                 }
             }
 
@@ -129,6 +131,8 @@ module.exports = {
             await guildMember.setNickname(buildNickname(newType, newTrain, newPreferred)).catch(() => {});
             if (guildMember.voice.channel) {
                 enrollIfSessionActive(userIdToEdit, interaction.guild.id, newType, newTrain);
+                const vc = storage.getCrewVCByChannel(guildMember.voice.channel.id);
+                if (vc) await guildMember.voice.channel.setName(`(${newTrain}) | Crew ${vc.crew_number}`).catch(() => {});
             }
         }
 
