@@ -45,6 +45,7 @@ module.exports = {
         const embed = new EmbedBuilder()
             .setTitle('📋 Operations Hours')
             .setColor(0x2b2d31)
+            .setThumbnail(target.displayAvatarURL({ dynamic: true }))
             .setDescription(`**${name}**\n\n${lines}`)
             .setTimestamp()
             .setFooter({ text: footerText });
