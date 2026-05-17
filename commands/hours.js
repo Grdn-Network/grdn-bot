@@ -25,18 +25,22 @@ module.exports = {
         const grandTotal = operationalTotal + h.bonus;
         const hasBonus = h.bonus > 0;
 
-        const pct = (n) => `(${operationalTotal > 0 ? Math.round(n / operationalTotal * 100) : 0}%)`;
+        const p = (n) => `(${String(operationalTotal > 0 ? Math.round(n / operationalTotal * 100) : 0).padStart(3)}%)`;
+        const row = (label, mins) =>
+            `${label.padEnd(12)}${fmt(mins).padStart(7)}  ${p(mins)}`;
 
         const name = record?.preferred_name ?? target.username;
-        const lines = [
-            `🚂 Road Crew — ${fmt(h.road_crew)} *${pct(h.road_crew)}*`,
-            `📡 Dispatch — ${fmt(h.dispatch)} *${pct(h.dispatch)}*`,
-            `🚧 Yard Crew — ${fmt(h.shunting)} *${pct(h.shunting)}*`,
-            `🎖️ TrainMaster — ${fmt(h.trainmaster)} *${pct(h.trainmaster)}*`,
-            ``,
-            `📊 Total — **${fmt(grandTotal)}**`,
-            hasBonus ? `*includes ${fmt(h.bonus)} founding bonus*` : null,
+        const statsBlock = [
+            row('Road Crew',   h.road_crew),
+            row('Dispatch',    h.dispatch),
+            row('Yard Crew',   h.shunting),
+            row('TrainMaster', h.trainmaster),
+            '',
+            `${'Total'.padEnd(12)}${fmt(grandTotal).padStart(7)}`,
+            hasBonus ? `includes ${fmt(h.bonus)} founding bonus` : null,
         ].filter(l => l !== null).join('\n');
+
+        const lines = `\`\`\`\n${statsBlock}\n\`\`\``;
 
         const footerText = operationalTotal === 0
             ? 'No ops logged yet — get on a train!'
