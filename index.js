@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
-const { CRASH_LOG_CHANNEL_ID, ADMIN_ROLE } = require('./config');
+const { CRASH_LOG_CHANNEL_ID } = require('./config');
 
 const CRASH_LOG_PATH = 'C:\\GRDN\\crash.log';
 fs.mkdirSync(path.dirname(CRASH_LOG_PATH), { recursive: true });
@@ -40,10 +40,6 @@ loadLogging(client);
 
 client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}`);
-    const channel = client.channels.cache.get(CRASH_LOG_CHANNEL_ID);
-    if (channel) {
-        channel.send(`✅ <@&${ADMIN_ROLE}> GRDN Bot is online and ready.`);
-    }
 });
 
 // Shared crash handler
@@ -93,15 +89,9 @@ process.on('unhandledRejection', (err) => {
     handleCrash('UnhandledRejection', err);
 });
 
-process.on('SIGTERM', async () => {
+process.on('SIGTERM', () => {
     const timestamp = new Date().toISOString();
-    fs.appendFileSync(CRASH_LOG_PATH, `[${timestamp}] Bot was terminated externally (SIGTERM)\n`);
-    try {
-        const channel = client.channels.cache.get(CRASH_LOG_CHANNEL_ID);
-        if (channel) {
-            await channel.send(`⚠️ <@&${ADMIN_ROLE}> GRDN Bot was shut down externally at ${timestamp}`);
-        }
-    } catch {}
+    fs.appendFileSync(CRASH_LOG_PATH, `[${timestamp}] Bot stopped (SIGTERM)\n`);
     process.exit(0);
 });
 
