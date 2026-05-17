@@ -34,7 +34,7 @@ module.exports = {
             });
         }
 
-        const newName = `(${crew.train_number}) | Crew`;
+        const newName = `(${crew.train_number}) | Crew ${vc.crew_number}`;
         await voiceChannel.setName(newName).catch(() => {});
 
         return interaction.reply({
