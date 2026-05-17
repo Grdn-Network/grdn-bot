@@ -69,7 +69,9 @@ async function handleCrash(type, err) {
 // Non-fatal Discord errors — don't kill the bot
 function isNonFatal(err) {
     if (err?.code === 10062) return true; // Unknown interaction — expired
+    if (err?.code === 40060) return true; // Interaction already acknowledged
     if (err?.message?.includes('Opening handshake has timed out')) return true; // WebSocket timeout
+    if (err?.message?.includes('The reply to this interaction has already been sent')) return true;
     return false;
 }
 

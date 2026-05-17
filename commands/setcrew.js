@@ -94,6 +94,8 @@ module.exports = {
             storage.upsertCrew(userIdToEdit, type, trainNumber, preferredName);
             enrollIfSessionActive(userIdToEdit, interaction.guild.id, type, trainNumber);
 
+            await interaction.deferReply({ ephemeral: true });
+
             const guildMember = await interaction.guild.members.fetch(userIdToEdit).catch(() => null);
             if (guildMember) {
                 await guildMember.setNickname(buildNickname(type, trainNumber, preferredName)).catch(() => {});
@@ -102,10 +104,7 @@ module.exports = {
             await updateTrainBoard(interaction.client, interaction.guild.id, TRAIN_BOARD_CHANNEL_ID)
                 .catch(err => console.error('[TrainBoard] Update failed:', err));
 
-            return interaction.reply({
-                content: `✅ Profile created for <@${userIdToEdit}>.`,
-                flags: 64
-            });
+            return interaction.editReply({ content: `✅ Profile created for <@${userIdToEdit}>.` });
         }
 
         const newType = type || existing.type;
@@ -122,6 +121,8 @@ module.exports = {
         storage.upsertCrew(userIdToEdit, newType, newTrain, newPreferred);
         enrollIfSessionActive(userIdToEdit, interaction.guild.id, newType, newTrain);
 
+        await interaction.deferReply({ ephemeral: true });
+
         const guildMember = await interaction.guild.members.fetch(userIdToEdit).catch(() => null);
         if (guildMember) {
             await guildMember.setNickname(buildNickname(newType, newTrain, newPreferred)).catch(() => {});
@@ -130,9 +131,6 @@ module.exports = {
         await updateTrainBoard(interaction.client, interaction.guild.id, TRAIN_BOARD_CHANNEL_ID)
             .catch(err => console.error('[TrainBoard] Update failed:', err));
 
-        return interaction.reply({
-            content: `✅ Profile updated and nickname synced for <@${userIdToEdit}>.`,
-            flags: 64
-        });
+        return interaction.editReply({ content: `✅ Profile updated and nickname synced for <@${userIdToEdit}>.` });
     }
 };
