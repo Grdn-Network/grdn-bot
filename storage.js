@@ -231,9 +231,7 @@ function classifyCategory(type, trainNumber) {
     if (type === 'TrainMaster') return 'trainmaster';
     if (type === 'Dispatcher')  return 'dispatch';
     if (type === 'Road Crew')   return 'road_crew';
-    if (type === 'Yard Crew') {
-        return /^\d+$/.test(trainNumber.trim()) ? 'shunting' : 'yardmaster';
-    }
+    if (type === 'Yard Crew') return 'shunting';
     return null;
 }
 

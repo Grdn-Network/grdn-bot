@@ -21,7 +21,7 @@ module.exports = {
         const record = storage.getCrewRaw(target.id);
         const h = storage.getUserHours(target.id);
 
-        const operationalTotal = h.road_crew + h.dispatch + h.shunting + h.yardmaster + h.trainmaster;
+        const operationalTotal = h.road_crew + h.dispatch + h.shunting + h.trainmaster;
         const grandTotal = operationalTotal + h.bonus;
         const hasBonus = h.bonus > 0;
 
@@ -33,8 +33,7 @@ module.exports = {
             .addFields(
                 { name: '🚂 Road Crew',   value: fmt(h.road_crew),   inline: true },
                 { name: '📡 Dispatch',    value: fmt(h.dispatch),    inline: true },
-                { name: '🔧 Shunting',    value: fmt(h.shunting),    inline: true },
-                { name: '🏗️ Yard / Logi', value: fmt(h.yardmaster),  inline: true },
+                { name: '🚧 Yard Crew',   value: fmt(h.shunting),    inline: true },
                 { name: '🎖️ TrainMaster', value: fmt(h.trainmaster), inline: true },
                 {
                     name: '⏱️ Total',
