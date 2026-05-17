@@ -215,6 +215,116 @@ function setDvSettings(host, port) {
 }
 
 // ===============================
+// OPS / HOURS TRACKING
+// ===============================
+
+/**
+ * Determines what category of hours a crew member earns.
+ * Dispatchers → 'dispatch'
+ * Road Crew   → 'road_crew'
+ * Shunter with all-digit train number → 'shunting'
+ * Shunter with a name/non-numeric     → 'yardmaster' (tracked but shown separately)
+ * Returns null if the user shouldn't be enrolled (no type, no train number).
+ */
+function classifyCategory(type, trainNumber) {
+    if (!type || !trainNumber || trainNumber.trim() === '') return null;
+    if (type === 'Dispatcher') return 'dispatch';
+    if (type === 'Road Crew') return 'road_crew';
+    if (type === 'Shunter') {
+        return /^\d+$/.test(trainNumber.trim()) ? 'shunting' : 'yardmaster';
+    }
+    return null;
+}
+
+/** Returns the currently open session for a guild, or null. */
+function getActiveSession(guildId) {
+    return db.prepare(`
+        SELECT * FROM ops_sessions
+        WHERE guild_id = ? AND ended_at IS NULL
+        ORDER BY started_at DESC LIMIT 1
+    `).get(guildId) || null;
+}
+
+/** Opens a new session. Closes any orphaned open session first. Returns the new session id. */
+function openSession(guildId, startedBy, startedAt) {
+    // Safety: close any leftover open session
+    const orphan = getActiveSession(guildId);
+    if (orphan) {
+        db.prepare(`UPDATE ops_sessions SET ended_at = ? WHERE id = ?`).run(startedAt, orphan.id);
+        db.prepare(`
+            UPDATE ops_log SET end_at = ?, minutes = MAX(1, ROUND((? - start_at) / 60000.0))
+            WHERE guild_id = ? AND session_id = ? AND end_at IS NULL
+        `).run(startedAt, startedAt, guildId, orphan.id);
+    }
+    const result = db.prepare(`
+        INSERT INTO ops_sessions (guild_id, started_by, started_at) VALUES (?, ?, ?)
+    `).run(guildId, startedBy, startedAt);
+    return result.lastInsertRowid;
+}
+
+/**
+ * Opens an ops_log entry for a user in the current session.
+ * No-ops silently if the user already has an open entry.
+ */
+function openOpsEntry(userId, guildId, sessionId, category, startAt) {
+    const exists = db.prepare(`
+        SELECT id FROM ops_log WHERE user_id = ? AND guild_id = ? AND end_at IS NULL LIMIT 1
+    `).get(userId, guildId);
+    if (exists) return;
+    db.prepare(`
+        INSERT INTO ops_log (user_id, guild_id, session_id, category, start_at)
+        VALUES (?, ?, ?, ?, ?)
+    `).run(userId, guildId, sessionId, category, startAt);
+}
+
+/**
+ * Closes the active session and writes minutes for all open entries.
+ * Returns the session id that was closed, or null if no session was active.
+ */
+function closeSession(guildId, endedBy, endedAt) {
+    const session = getActiveSession(guildId);
+    if (!session) return null;
+    db.prepare(`
+        UPDATE ops_log
+        SET end_at = ?, minutes = MAX(1, ROUND((? - start_at) / 60000.0))
+        WHERE guild_id = ? AND session_id = ? AND end_at IS NULL
+    `).run(endedAt, endedAt, guildId, session.id);
+    db.prepare(`
+        UPDATE ops_sessions SET ended_by = ?, ended_at = ? WHERE id = ?
+    `).run(endedBy, endedAt, session.id);
+    return session.id;
+}
+
+/**
+ * Returns total minutes by category for a user, including any currently open entry.
+ * Shape: { road_crew, dispatch, shunting, yardmaster, bonus }
+ */
+function getUserHours(userId) {
+    const rows = db.prepare(`
+        SELECT category, SUM(minutes) as total
+        FROM ops_log
+        WHERE user_id = ? AND end_at IS NOT NULL
+        GROUP BY category
+    `).all(userId);
+
+    const open = db.prepare(`
+        SELECT category, start_at FROM ops_log
+        WHERE user_id = ? AND end_at IS NULL LIMIT 1
+    `).get(userId);
+
+    const totals = { road_crew: 0, dispatch: 0, shunting: 0, yardmaster: 0, bonus: 0 };
+    for (const row of rows) {
+        if (Object.prototype.hasOwnProperty.call(totals, row.category)) {
+            totals[row.category] += row.total ?? 0;
+        }
+    }
+    if (open && Object.prototype.hasOwnProperty.call(totals, open.category)) {
+        totals[open.category] += Math.round((Date.now() - open.start_at) / 60000);
+    }
+    return totals;
+}
+
+// ===============================
 // EXPORTS
 // ===============================
 
@@ -232,4 +342,10 @@ module.exports = {
     setTrainBoardMessageId,
     getDvSettings,
     setDvSettings,
+    classifyCategory,
+    getActiveSession,
+    openSession,
+    openOpsEntry,
+    closeSession,
+    getUserHours,
 };

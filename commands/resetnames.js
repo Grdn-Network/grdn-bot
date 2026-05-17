@@ -7,7 +7,7 @@ const { ADMIN_ROLE, HOST_ROLE } = require('../config');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('resetnames')
-        .setDescription('Reset all user nicknames to their Preferred Name and clear train numbers.'),
+        .setDescription('Close the ops session and reset all nicknames to Preferred Name.'),
 
     async execute(interaction) {
         if (!hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE])) {
@@ -17,23 +17,27 @@ module.exports = {
             });
         }
 
-        await interaction.reply({
-            content: '🔄 Resetting all nicknames to Preferred Names…',
-            flags: 64
-        });
+        await interaction.reply({ content: '🔄 Closing ops session and resetting nicknames…', flags: 64 });
 
-        const { reset, failed } = await module.exports.resetLogic(interaction);
+        const { reset, failed, sessionClosed } = await module.exports.resetLogic(interaction);
 
         return interaction.followUp({
-            content: `✅ Nickname reset complete.\n• Reset: **${reset}**\n• Failed: **${failed}**`,
+            content:
+                `✅ Reset complete.\n` +
+                `• Nicknames reset: **${reset}** | Failed: **${failed}**\n` +
+                `• Ops session: **${sessionClosed ? 'closed — hours saved' : 'no active session'}**`,
             flags: 64
         });
     },
 
     async resetLogic(interaction) {
         const guild = interaction.guild;
-        const crew = storage.getAllCrew(guild.id);
+        const now = Date.now();
 
+        // Close ops session and write hours before clearing train numbers
+        const sessionId = storage.closeSession(guild.id, interaction.user.id, now);
+
+        const crew = storage.getAllCrew(guild.id);
         let reset = 0;
         let failed = 0;
 
@@ -49,9 +53,8 @@ module.exports = {
             }
         }
 
-        // Bulk-clear all train numbers after nickname sync
         storage.clearAllTrainNumbers();
 
-        return { reset, failed };
+        return { reset, failed, sessionClosed: sessionId !== null };
     }
 };

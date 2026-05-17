@@ -6,6 +6,13 @@ const { buildNickname } = require('../utils/nickname');
 const { hasAnyRole } = require('../utils/permissions');
 const { TRAIN_BOARD_CHANNEL_ID, STAFF_ROLES } = require('../config');
 
+function enrollIfSessionActive(userId, guildId, type, trainNumber) {
+    const session = storage.getActiveSession(guildId);
+    if (!session) return;
+    const category = storage.classifyCategory(type, trainNumber);
+    if (category) storage.openOpsEntry(userId, guildId, session.id, category, Date.now());
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('setcrew')
@@ -76,6 +83,7 @@ module.exports = {
             }
 
             storage.upsertCrew(userIdToEdit, type, trainNumber, preferredName);
+            enrollIfSessionActive(userIdToEdit, interaction.guild.id, type, trainNumber);
 
             const guildMember = await interaction.guild.members.fetch(userIdToEdit).catch(() => null);
             if (guildMember) {
@@ -103,6 +111,7 @@ module.exports = {
         }
 
         storage.upsertCrew(userIdToEdit, newType, newTrain, newPreferred);
+        enrollIfSessionActive(userIdToEdit, interaction.guild.id, newType, newTrain);
 
         const guildMember = await interaction.guild.members.fetch(userIdToEdit).catch(() => null);
         if (guildMember) {

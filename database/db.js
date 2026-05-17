@@ -91,4 +91,54 @@ db.prepare(`
     VALUES (1, NULL, NULL)
 `).run();
 
+/* -----------------------------------------------------
+   OPS / HOURS TRACKING
+----------------------------------------------------- */
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS ops_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id TEXT NOT NULL,
+        started_by TEXT,
+        started_at INTEGER NOT NULL,
+        ended_by TEXT,
+        ended_at INTEGER
+    )
+`).run();
+
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS ops_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        guild_id TEXT NOT NULL,
+        session_id INTEGER,
+        category TEXT NOT NULL,
+        start_at INTEGER,
+        end_at INTEGER,
+        minutes INTEGER
+    )
+`).run();
+
+// Tracks one-time migrations so they never run twice
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS ops_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )
+`).run();
+
+// Grant 10h founding bonus to all users registered before this system existed
+const bonusGranted = db.prepare(`SELECT value FROM ops_meta WHERE key = 'bonus_granted'`).get();
+if (!bonusGranted) {
+    const users = db.prepare(`SELECT user_id FROM registrations`).all();
+    const now = Date.now();
+    const insert = db.prepare(`
+        INSERT INTO ops_log (user_id, guild_id, session_id, category, start_at, end_at, minutes)
+        VALUES (?, 'global', NULL, 'bonus', ?, ?, 600)
+    `);
+    db.transaction(() => {
+        for (const u of users) insert.run(u.user_id, now, now);
+    })();
+    db.prepare(`INSERT INTO ops_meta (key, value) VALUES ('bonus_granted', '1')`).run();
+}
+
 module.exports = db;
