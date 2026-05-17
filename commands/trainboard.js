@@ -28,7 +28,8 @@ module.exports = {
 
         storage.setTrainBoardMessageId(guildId, null);
 
-        await updateTrainBoard(interaction.client, guildId, TRAIN_BOARD_CHANNEL_ID);
+        await updateTrainBoard(interaction.client, guildId, TRAIN_BOARD_CHANNEL_ID)
+            .catch(err => console.error('[TrainBoard] Update failed:', err));
 
         await interaction.editReply('✅ New Train Board sent.');
     }

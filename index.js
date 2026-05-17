@@ -4,6 +4,9 @@ const path = require('path');
 require('dotenv').config();
 const { CRASH_LOG_CHANNEL_ID, ADMIN_ROLE } = require('./config');
 
+const CRASH_LOG_PATH = 'C:\\GRDN\\crash.log';
+fs.mkdirSync(path.dirname(CRASH_LOG_PATH), { recursive: true });
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -47,7 +50,7 @@ async function handleCrash(type, err) {
     const timestamp = new Date().toISOString();
     const message = `[${timestamp}] ${type}\n${err.stack ?? err}\n`;
 
-    fs.appendFileSync('C:\\GRDN\\crash.log', message);
+    fs.appendFileSync(CRASH_LOG_PATH, message);
 
     try {
         const channel = client.channels.cache.get(CRASH_LOG_CHANNEL_ID);
@@ -91,7 +94,7 @@ process.on('unhandledRejection', (err) => {
 
 process.on('SIGTERM', async () => {
     const timestamp = new Date().toISOString();
-    fs.appendFileSync('C:\\GRDN\\crash.log', `[${timestamp}] Bot was terminated externally (SIGTERM)\n`);
+    fs.appendFileSync(CRASH_LOG_PATH, `[${timestamp}] Bot was terminated externally (SIGTERM)\n`);
     try {
         const channel = client.channels.cache.get(CRASH_LOG_CHANNEL_ID);
         if (channel) {

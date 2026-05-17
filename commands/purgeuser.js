@@ -1,11 +1,13 @@
 // commands/purgeuser.js
 const { SlashCommandBuilder } = require('discord.js');
+const storage = require('../storage');
+const { hasAnyRole } = require('../utils/permissions');
 const { ADMIN_ROLE } = require('../config');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('purgeuser')
-        .setDescription('Delete ALL messages from a user and then ban them.')
+        .setDescription('Delete recent messages from a user and then ban them.')
         .addUserOption(option =>
             option.setName('target')
                 .setDescription('The user to purge and ban')
@@ -13,7 +15,7 @@ module.exports = {
         ),
 
     async execute(interaction) {
-        if (!interaction.member.roles.cache.has(ADMIN_ROLE)) {
+        if (!hasAnyRole(interaction.member, ADMIN_ROLE)) {
             return interaction.reply({
                 content: '❌ You do not have permission to use this command.',
                 flags: 64
@@ -24,13 +26,13 @@ module.exports = {
         const guild = interaction.guild;
 
         await interaction.reply({
-            content: `🔄 Purging all messages from **${target.tag}**...`,
+            content: `🔄 Purging recent messages from **${target.tag}**...`,
             flags: 64
         });
 
         let deletedCount = 0;
 
-        for (const [id, channel] of guild.channels.cache) {
+        for (const [, channel] of guild.channels.cache) {
             if (!channel.isTextBased()) continue;
             try {
                 const messages = await channel.messages.fetch({ limit: 100 });
@@ -40,13 +42,16 @@ module.exports = {
                     deletedCount++;
                 }
             } catch {
-                // Ignore channels bot can't access
+                // Skip channels the bot cannot access
             }
         }
 
         await guild.members.ban(target.id, {
             reason: `Purged and banned by ${interaction.user.tag}`
         });
+
+        // Remove from crew database so they don't linger in the train board
+        storage.deleteCrew(target.id);
 
         interaction.client.emit('purgeUser', {
             moderator: interaction.user,
@@ -55,7 +60,7 @@ module.exports = {
         });
 
         await interaction.followUp({
-            content: `✅ Deleted **${deletedCount}** messages and banned **${target.tag}**.`,
+            content: `✅ Deleted **${deletedCount}** messages, banned **${target.tag}**, and removed their crew registration.`,
             flags: 64
         });
     }

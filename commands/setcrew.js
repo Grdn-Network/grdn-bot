@@ -1,9 +1,9 @@
 // commands/setcrew.js
-
 const { SlashCommandBuilder } = require('discord.js');
-const db = require('../database/db');
+const storage = require('../storage');
 const { updateTrainBoard } = require('../trainBoard');
 const { buildNickname } = require('../utils/nickname');
+const { hasAnyRole } = require('../utils/permissions');
 const { TRAIN_BOARD_CHANNEL_ID, STAFF_ROLES } = require('../config');
 
 module.exports = {
@@ -36,11 +36,9 @@ module.exports = {
         const targetUser = interaction.options.getUser('user');
         const member = interaction.member;
 
-        // Determine which user's profile to edit
         let userIdToEdit;
         if (targetUser) {
-            const hasPermission = STAFF_ROLES.some(role => member.roles.cache.has(role));
-            if (!hasPermission) {
+            if (!hasAnyRole(member, STAFF_ROLES)) {
                 return interaction.reply({
                     content: "❌ You do not have permission to edit another user's profile.",
                     flags: 64
@@ -55,11 +53,9 @@ module.exports = {
         const trainNumber = interaction.options.getString('train_number');
         const preferredName = interaction.options.getString('preferred_name');
 
-        // Fetch existing profile
-        const existing = db.prepare(`SELECT * FROM registrations WHERE user_id = ?`).get(userIdToEdit);
+        const existing = storage.getCrewRaw(userIdToEdit);
 
         if (!existing) {
-            // New profile — all fields required
             const missing = [];
             if (!type) missing.push('type');
             if (!trainNumber) missing.push('train_number');
@@ -79,17 +75,15 @@ module.exports = {
                 });
             }
 
-            db.prepare(`
-                INSERT INTO registrations (user_id, type, train_number, preferred_name)
-                VALUES (?, ?, ?, ?)
-            `).run(userIdToEdit, type, trainNumber, preferredName);
+            storage.upsertCrew(userIdToEdit, type, trainNumber, preferredName);
 
             const guildMember = await interaction.guild.members.fetch(userIdToEdit).catch(() => null);
             if (guildMember) {
                 await guildMember.setNickname(buildNickname(type, trainNumber, preferredName)).catch(() => {});
             }
 
-            await updateTrainBoard(interaction.client, interaction.guild.id, TRAIN_BOARD_CHANNEL_ID);
+            await updateTrainBoard(interaction.client, interaction.guild.id, TRAIN_BOARD_CHANNEL_ID)
+                .catch(err => console.error('[TrainBoard] Update failed:', err));
 
             return interaction.reply({
                 content: `✅ Profile created for <@${userIdToEdit}>.`,
@@ -97,7 +91,6 @@ module.exports = {
             });
         }
 
-        // Existing profile — merge with provided values
         const newType = type || existing.type;
         const newTrain = trainNumber || existing.train_number;
         const newPreferred = preferredName || existing.preferred_name;
@@ -109,18 +102,15 @@ module.exports = {
             });
         }
 
-        db.prepare(`
-            UPDATE registrations
-            SET type = ?, train_number = ?, preferred_name = ?
-            WHERE user_id = ?
-        `).run(newType, newTrain, newPreferred, userIdToEdit);
+        storage.upsertCrew(userIdToEdit, newType, newTrain, newPreferred);
 
         const guildMember = await interaction.guild.members.fetch(userIdToEdit).catch(() => null);
         if (guildMember) {
             await guildMember.setNickname(buildNickname(newType, newTrain, newPreferred)).catch(() => {});
         }
 
-        await updateTrainBoard(interaction.client, interaction.guild.id, TRAIN_BOARD_CHANNEL_ID);
+        await updateTrainBoard(interaction.client, interaction.guild.id, TRAIN_BOARD_CHANNEL_ID)
+            .catch(err => console.error('[TrainBoard] Update failed:', err));
 
         return interaction.reply({
             content: `✅ Profile updated and nickname synced for <@${userIdToEdit}>.`,

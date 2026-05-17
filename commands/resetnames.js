@@ -1,16 +1,16 @@
 // commands/resetnames.js
 const { SlashCommandBuilder } = require('discord.js');
 const storage = require('../storage');
+const { hasAnyRole } = require('../utils/permissions');
 const { ADMIN_ROLE, HOST_ROLE } = require('../config');
-const db = require('../database/db');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('resetnames')
-        .setDescription('Reset all user nicknames to their registered Preferred Name.'),
+        .setDescription('Reset all user nicknames to their Preferred Name and clear train numbers.'),
 
     async execute(interaction) {
-        if (!interaction.member.roles.cache.has(ADMIN_ROLE) && !interaction.member.roles.cache.has(HOST_ROLE)) {
+        if (!hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE])) {
             return interaction.reply({
                 content: '❌ You do not have permission to use this command.',
                 flags: 64
@@ -30,11 +30,6 @@ module.exports = {
         });
     },
 
-    // Silent version called by buttons
-    async executeSilent(interaction) {
-        await module.exports.resetLogic(interaction);
-    },
-
     async resetLogic(interaction) {
         const guild = interaction.guild;
         const crew = storage.getAllCrew(guild.id);
@@ -48,16 +43,14 @@ module.exports = {
                 if (!member) { failed++; continue; }
 
                 await member.setNickname(row.preferredName).catch(() => { failed++; });
-
-                db.prepare(`
-                    UPDATE registrations SET train_number = '' WHERE user_id = ?
-                `).run(row.userId);
-
                 reset++;
             } catch {
                 failed++;
             }
         }
+
+        // Bulk-clear all train numbers after nickname sync
+        storage.clearAllTrainNumbers();
 
         return { reset, failed };
     }

@@ -35,6 +35,7 @@ module.exports = {
             flags: 64
         });
 
-        await updateTrainBoard(interaction.client, guildId, TRAIN_BOARD_CHANNEL_ID);
+        await updateTrainBoard(interaction.client, guildId, TRAIN_BOARD_CHANNEL_ID)
+            .catch(err => console.error('[TrainBoard] Update failed:', err));
     }
 };

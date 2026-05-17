@@ -75,4 +75,20 @@ db.prepare(`
     )
 `).run();
 
+/* -----------------------------------------------------
+   DV SETTINGS TABLE
+----------------------------------------------------- */
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS dv_settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        dv_host TEXT,
+        dv_port INTEGER
+    )
+`).run();
+
+db.prepare(`
+    INSERT OR IGNORE INTO dv_settings (id, dv_host, dv_port)
+    VALUES (1, NULL, NULL)
+`).run();
+
 module.exports = db;

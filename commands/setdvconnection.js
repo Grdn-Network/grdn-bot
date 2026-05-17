@@ -1,20 +1,8 @@
 // commands/setdvconnection.js
 const { SlashCommandBuilder } = require('discord.js');
-const db = require('../database/db');
+const storage = require('../storage');
+const { hasAnyRole } = require('../utils/permissions');
 const { STAFF_ROLES } = require('../config');
-
-db.prepare(`
-    CREATE TABLE IF NOT EXISTS dv_settings (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        dv_host TEXT,
-        dv_port INTEGER
-    )
-`).run();
-
-db.prepare(`
-    INSERT OR IGNORE INTO dv_settings (id, dv_host, dv_port)
-    VALUES (1, NULL, NULL)
-`).run();
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -34,8 +22,7 @@ module.exports = {
         ),
 
     async execute(interaction) {
-        const hasPermission = STAFF_ROLES.some(r => interaction.member.roles.cache.has(r));
-        if (!hasPermission) {
+        if (!hasAnyRole(interaction.member, STAFF_ROLES)) {
             return interaction.reply({
                 content: '❌ You do not have permission to use this command.',
                 flags: 64
@@ -45,7 +32,16 @@ module.exports = {
         const host = interaction.options.getString('host').trim();
         const port = interaction.options.getInteger('port');
 
-        db.prepare(`UPDATE dv_settings SET dv_host = ?, dv_port = ? WHERE id = 1`).run(host, port);
+        // Basic host validation — reject obviously internal/loopback addresses
+        const blocked = /^(localhost|127\.|0\.0\.0\.0|::1)/i.test(host);
+        if (blocked) {
+            return interaction.reply({
+                content: '❌ That host address is not allowed.',
+                flags: 64
+            });
+        }
+
+        storage.setDvSettings(host, port);
 
         return interaction.reply({
             content: `✅ DV connection set to **${host}:${port}**.`,

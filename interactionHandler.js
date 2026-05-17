@@ -1,10 +1,37 @@
 // interactionHandler.js
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { ADMIN_ROLE } = require('./config');
+const fs = require('fs');
+const path = require('path');
 
 module.exports = (client) => {
 
+    // Load button handlers from buttons/ directory
+    const buttonHandlers = [];
+    const buttonsPath = path.join(__dirname, 'buttons');
+    if (fs.existsSync(buttonsPath)) {
+        for (const file of fs.readdirSync(buttonsPath).filter(f => f.endsWith('.js'))) {
+            const handler = require(`./buttons/${file}`);
+            buttonHandlers.push(handler);
+            console.log(`[BUTTONS] Loaded ${file}`);
+        }
+    }
+
+    // Safe reply helper — works whether interaction is fresh, deferred, or already replied.
+    async function safeReply(interaction, payload) {
+        try {
+            if (interaction.replied || interaction.deferred) {
+                await interaction.followUp(payload);
+            } else {
+                await interaction.reply(payload);
+            }
+        } catch {
+            // Interaction expired or unreachable — nothing we can do
+        }
+    }
+
     client.on('interactionCreate', async interaction => {
+
+        // Ignore DMs — all features are guild-only
+        if (!interaction.guild) return;
 
         // -----------------------------
         // SLASH COMMAND HANDLER
@@ -16,8 +43,11 @@ module.exports = (client) => {
             try {
                 await command.execute(interaction);
             } catch (err) {
-                console.error(err);
-                await interaction.reply({ content: '❌ Error executing command.', flags: 64 });
+                console.error('[Command Error]', interaction.commandName, err);
+                await safeReply(interaction, {
+                    content: '❌ An error occurred while executing this command.',
+                    flags: 64
+                });
             }
             return;
         }
@@ -27,61 +57,19 @@ module.exports = (client) => {
         // -----------------------------
         if (!interaction.isButton()) return;
 
-        const member = interaction.guild.members.cache.get(interaction.user.id);
+        const handler = buttonHandlers.find(h =>
+            h.customId
+                ? h.customId === interaction.customId
+                : h.matches?.(interaction.customId)
+        );
 
-        // --- SYNC NAMES BUTTON ---
-        if (interaction.customId === 'syncnames_btn') {
-            if (!member.roles.cache.has(ADMIN_ROLE)) {
-                return interaction.reply({ content: '❌ Only admins can sync names.', flags: 64 });
-            }
-            const syncCmd = client.commands.get('syncnames');
-            if (!syncCmd) {
-                return interaction.reply({ content: '❌ Syncnames command not found.', flags: 64 });
-            }
-            return syncCmd.execute(interaction);
+        if (!handler) return;
+
+        try {
+            await handler.execute(interaction);
+        } catch (err) {
+            console.error('[Button Error]', interaction.customId, err);
+            await safeReply(interaction, { content: '❌ An error occurred.', flags: 64 });
         }
-
-        // --- RESET NAMES BUTTON ---
-        if (interaction.customId === 'resetnames_btn') {
-            if (!member.roles.cache.has(ADMIN_ROLE)) {
-                return interaction.reply({ content: '❌ Only admins can reset names.', flags: 64 });
-            }
-            const resetCmd = client.commands.get('resetnames');
-            if (!resetCmd) {
-                return interaction.reply({ content: '❌ resetnames command not found.', flags: 64 });
-            }
-            return resetCmd.execute(interaction);
-        }
-
-        // --- TRANSFER APPROVE BUTTON ---
-        if (interaction.customId.startsWith('xfer_approve_')) {
-            const parts = interaction.customId.split('_');
-            const operatorId = parts[2];
-            const receiverId = parts[3];
-            const requesterId = parts[4];
-
-            if (interaction.user.id !== receiverId) {
-                return interaction.reply({
-                    content: '❌ Only the assigned receiver can approve this transfer.',
-                    flags: 64
-                });
-            }
-
-            const updatedRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId(interaction.customId)
-                    .setLabel(`Approved by ${interaction.user.username}`)
-                    .setStyle(ButtonStyle.Success)
-                    .setDisabled(true)
-            );
-
-            await interaction.update({ components: [updatedRow] });
-
-            return interaction.followUp({
-                content: `<@${requesterId}> your request has been approved.`,
-                allowedMentions: { users: [requesterId] }
-            });
-        }
-
     });
 };

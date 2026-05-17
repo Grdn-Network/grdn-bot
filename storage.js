@@ -141,14 +141,95 @@ function setTrainBoardMessageId(guildId, messageId) {
 }
 
 // ===============================
+// CREW WRITE FUNCTIONS
+// ===============================
+
+/**
+ * Returns the raw DB row for a user, or null.
+ * Use this when you need the snake_case fields (e.g. train_number).
+ */
+function getCrewRaw(userId) {
+    return db.prepare(`
+        SELECT user_id, type, train_number, preferred_name
+        FROM registrations WHERE user_id = ?
+    `).get(userId) || null;
+}
+
+/**
+ * Insert or update a crew member's full profile.
+ */
+function upsertCrew(userId, type, trainNumber, preferredName) {
+    db.prepare(`
+        INSERT INTO registrations (user_id, type, train_number, preferred_name)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            type = excluded.type,
+            train_number = excluded.train_number,
+            preferred_name = excluded.preferred_name
+    `).run(userId, type, trainNumber, preferredName);
+}
+
+/**
+ * Remove a crew member from the database entirely.
+ */
+function deleteCrew(userId) {
+    db.prepare(`DELETE FROM registrations WHERE user_id = ?`).run(userId);
+}
+
+/**
+ * Clear all train numbers — used at end-of-session by resetnames.
+ */
+function clearAllTrainNumbers() {
+    db.prepare(`UPDATE registrations SET train_number = ''`).run();
+}
+
+// ===============================
+// ASSIGNMENT DELETE
+// ===============================
+
+/**
+ * Remove an assignment row entirely.
+ */
+function deleteAssignment(guildId, trainNumber) {
+    db.prepare(`
+        DELETE FROM assignments WHERE guild_id = ? AND train_number = ?
+    `).run(guildId, trainNumber);
+}
+
+// ===============================
+// DV SETTINGS
+// ===============================
+
+/**
+ * Returns the stored DV host/port, or null if unset.
+ */
+function getDvSettings() {
+    return db.prepare(`SELECT dv_host, dv_port FROM dv_settings WHERE id = 1`).get() || null;
+}
+
+/**
+ * Saves the DV host and port.
+ */
+function setDvSettings(host, port) {
+    db.prepare(`UPDATE dv_settings SET dv_host = ?, dv_port = ? WHERE id = 1`).run(host, port);
+}
+
+// ===============================
 // EXPORTS
 // ===============================
 
 module.exports = {
     getAllCrew,
     getCrewByUserId,
+    getCrewRaw,
+    upsertCrew,
+    deleteCrew,
+    clearAllTrainNumbers,
     getAssignmentByTrain,
     setAssignment,
+    deleteAssignment,
     getTrainBoardMessageId,
-    setTrainBoardMessageId
+    setTrainBoardMessageId,
+    getDvSettings,
+    setDvSettings,
 };

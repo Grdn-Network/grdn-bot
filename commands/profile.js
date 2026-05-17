@@ -1,5 +1,6 @@
+// commands/profile.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const db = require('../database/db');
+const storage = require('../storage');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -13,10 +14,7 @@ module.exports = {
 
     async execute(interaction) {
         const target = interaction.options.getUser('user');
-
-        const record = db.prepare(`
-            SELECT * FROM registrations WHERE user_id = ?
-        `).get(target.id);
+        const record = storage.getCrewRaw(target.id);
 
         if (!record) {
             return interaction.reply({
@@ -29,12 +27,12 @@ module.exports = {
             .setColor(0x2b2d31)
             .setThumbnail(target.displayAvatarURL({ dynamic: true }))
             .addFields(
-                { name: "👤 User", value: `${target}`, inline: false },
-                { name: "🛠️ Type", value: record.type, inline: true },
-                { name: "🚆 Train Number", value: record.train_number, inline: true },
-                { name: "🏷️ Preferred Name", value: record.preferred_name, inline: true }
+                { name: '👤 User', value: `${target}`, inline: false },
+                { name: '🛠️ Type', value: record.type, inline: true },
+                { name: '🚆 Train Number', value: record.train_number || '—', inline: true },
+                { name: '🏷️ Preferred Name', value: record.preferred_name, inline: true }
             )
-            .setFooter({ text: "Registration System" })
+            .setFooter({ text: 'Registration System' })
             .setTimestamp();
 
         return interaction.reply({ embeds: [embed] });

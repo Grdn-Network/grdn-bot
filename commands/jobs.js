@@ -1,8 +1,11 @@
 // commands/jobs.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const fetch = require('node-fetch');
-const db = require('../database/db');
+const storage = require('../storage');
+const { hasAnyRole } = require('../utils/permissions');
 const { STAFF_ROLES } = require('../config');
+
+const FETCH_TIMEOUT_MS = 5000;
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -10,16 +13,15 @@ module.exports = {
         .setDescription('List all active Derail Valley jobs.'),
 
     async execute(interaction) {
-        const hasPermission = STAFF_ROLES.some(role => interaction.member.roles.cache.has(role));
-        if (!hasPermission) {
+        if (!hasAnyRole(interaction.member, STAFF_ROLES)) {
             return interaction.reply({
                 content: '❌ You do not have permission to use this command.',
                 flags: 64
             });
         }
 
-        const settings = db.prepare(`SELECT dv_host, dv_port FROM dv_settings WHERE id = 1`).get();
-        if (!settings || !settings.dv_host || !settings.dv_port) {
+        const settings = storage.getDvSettings();
+        if (!settings?.dv_host || !settings?.dv_port) {
             return interaction.reply({
                 content: '❌ DV host/port not configured. Ask a staff member to run `/setdvconnection`.',
                 flags: 64
@@ -29,7 +31,10 @@ module.exports = {
         await interaction.deferReply();
 
         try {
-            const response = await fetch(`http://${settings.dv_host}:${settings.dv_port}/jobs`);
+            const response = await fetch(
+                `http://${settings.dv_host}:${settings.dv_port}/jobs`,
+                { timeout: FETCH_TIMEOUT_MS }
+            );
 
             if (!response.ok) {
                 return interaction.editReply('⚠️ The Derail Valley mod responded with an error.');
