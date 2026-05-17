@@ -118,6 +118,9 @@ db.prepare(`
     )
 `).run();
 
+// Rename Shunter → Yard Crew
+db.prepare(`UPDATE registrations SET type = 'Yard Crew' WHERE type = 'Shunter'`).run();
+
 // Tracks one-time migrations so they never run twice
 db.prepare(`
     CREATE TABLE IF NOT EXISTS ops_meta (

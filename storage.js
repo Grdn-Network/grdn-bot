@@ -228,9 +228,10 @@ function setDvSettings(host, port) {
  */
 function classifyCategory(type, trainNumber) {
     if (!type || !trainNumber || trainNumber.trim() === '') return null;
-    if (type === 'Dispatcher') return 'dispatch';
-    if (type === 'Road Crew') return 'road_crew';
-    if (type === 'Shunter') {
+    if (type === 'TrainMaster') return 'trainmaster';
+    if (type === 'Dispatcher')  return 'dispatch';
+    if (type === 'Road Crew')   return 'road_crew';
+    if (type === 'Yard Crew') {
         return /^\d+$/.test(trainNumber.trim()) ? 'shunting' : 'yardmaster';
     }
     return null;
@@ -312,7 +313,7 @@ function getUserHours(userId) {
         WHERE user_id = ? AND end_at IS NULL LIMIT 1
     `).get(userId);
 
-    const totals = { road_crew: 0, dispatch: 0, shunting: 0, yardmaster: 0, bonus: 0 };
+    const totals = { road_crew: 0, dispatch: 0, shunting: 0, yardmaster: 0, trainmaster: 0, bonus: 0 };
     for (const row of rows) {
         if (Object.prototype.hasOwnProperty.call(totals, row.category)) {
             totals[row.category] += row.total ?? 0;

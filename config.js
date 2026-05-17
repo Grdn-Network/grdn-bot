@@ -10,7 +10,7 @@ module.exports = {
     ADMIN_ROLE: '1474625834798022828',
     DISPATCH_QUAL_ROLE: '1474628588568580146',
     HOST_ROLE: '1482790161174761542',
-    YM_QUAL_ROLE: '1474629091650179132',
+    TRAINMASTER_ROLE: '1474629091650179132',
 
     // Roles allowed to perform staff actions
     STAFF_ROLES: [
@@ -23,7 +23,7 @@ module.exports = {
     XFER_ROLES: [
         '1474625834798022828', // Admin
         '1474628588568580146', // Dispatch Qual
-        '1474629091650179132', // YM Qual
+        '1474629091650179132', // TrainMaster
     ],
 
     // DV Connection

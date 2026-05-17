@@ -4,7 +4,7 @@ const storage = require('../storage');
 const { updateTrainBoard } = require('../trainBoard');
 const { buildNickname } = require('../utils/nickname');
 const { hasAnyRole } = require('../utils/permissions');
-const { TRAIN_BOARD_CHANNEL_ID, STAFF_ROLES } = require('../config');
+const { TRAIN_BOARD_CHANNEL_ID, STAFF_ROLES, TRAINMASTER_ROLE } = require('../config');
 
 function enrollIfSessionActive(userId, guildId, type, trainNumber) {
     const session = storage.getActiveSession(guildId);
@@ -25,9 +25,10 @@ module.exports = {
             option.setName('type')
                 .setDescription('Crew type')
                 .addChoices(
-                    { name: 'Dispatcher', value: 'Dispatcher' },
-                    { name: 'Shunter', value: 'Shunter' },
-                    { name: 'Road Crew', value: 'Road Crew' }
+                    { name: 'TrainMaster', value: 'TrainMaster' },
+                    { name: 'Dispatcher',  value: 'Dispatcher'  },
+                    { name: 'Yard Crew',   value: 'Yard Crew'   },
+                    { name: 'Road Crew',   value: 'Road Crew'   }
                 )
         )
         .addStringOption(option =>
@@ -59,6 +60,14 @@ module.exports = {
         const type = interaction.options.getString('type');
         const trainNumber = interaction.options.getString('train_number');
         const preferredName = interaction.options.getString('preferred_name');
+
+        // TrainMaster type requires that role (or staff setting it for someone else)
+        if (type === 'TrainMaster' && !targetUser && !hasAnyRole(member, [TRAINMASTER_ROLE, ...STAFF_ROLES])) {
+            return interaction.reply({
+                content: '❌ You do not have the TrainMaster role.',
+                flags: 64
+            });
+        }
 
         const existing = storage.getCrewRaw(userIdToEdit);
 
