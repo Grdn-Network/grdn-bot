@@ -144,4 +144,16 @@ if (!bonusGranted) {
     db.prepare(`INSERT INTO ops_meta (key, value) VALUES ('bonus_granted', '1')`).run();
 }
 
+/* -----------------------------------------------------
+   CREW VOICE CHANNELS
+----------------------------------------------------- */
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS crew_vcs (
+        channel_id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        crew_number INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+    )
+`).run();
+
 module.exports = db;

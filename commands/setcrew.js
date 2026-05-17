@@ -92,13 +92,15 @@ module.exports = {
             }
 
             storage.upsertCrew(userIdToEdit, type, trainNumber, preferredName);
-            enrollIfSessionActive(userIdToEdit, interaction.guild.id, type, trainNumber);
 
             await interaction.deferReply({ ephemeral: true });
 
             const guildMember = await interaction.guild.members.fetch(userIdToEdit).catch(() => null);
             if (guildMember) {
                 await guildMember.setNickname(buildNickname(type, trainNumber, preferredName)).catch(() => {});
+                if (guildMember.voice.channel) {
+                    enrollIfSessionActive(userIdToEdit, interaction.guild.id, type, trainNumber);
+                }
             }
 
             await updateTrainBoard(interaction.client, interaction.guild.id, TRAIN_BOARD_CHANNEL_ID)
@@ -119,13 +121,15 @@ module.exports = {
         }
 
         storage.upsertCrew(userIdToEdit, newType, newTrain, newPreferred);
-        enrollIfSessionActive(userIdToEdit, interaction.guild.id, newType, newTrain);
 
         await interaction.deferReply({ ephemeral: true });
 
         const guildMember = await interaction.guild.members.fetch(userIdToEdit).catch(() => null);
         if (guildMember) {
             await guildMember.setNickname(buildNickname(newType, newTrain, newPreferred)).catch(() => {});
+            if (guildMember.voice.channel) {
+                enrollIfSessionActive(userIdToEdit, interaction.guild.id, newType, newTrain);
+            }
         }
 
         await updateTrainBoard(interaction.client, interaction.guild.id, TRAIN_BOARD_CHANNEL_ID)

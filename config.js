@@ -26,6 +26,9 @@ module.exports = {
         '1474629091650179132', // TrainMaster
     ],
 
+    // Crew Voice Channels — set this to the category ID where Crew VCs should be created
+    CREW_VC_CATEGORY_ID: 'YOUR_CATEGORY_ID_HERE',
+
     // DV Connection
     DV_HOST: '73.180.75.143',
     DV_PORT: '7230',

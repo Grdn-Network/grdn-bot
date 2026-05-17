@@ -42,11 +42,13 @@ module.exports = {
 
                 if (ok) updated++; else failed++;
 
-                // Enroll in ops session if they have a classifiable role + train number
-                const category = storage.classifyCategory(row.type, row.trainNumber);
-                if (category) {
-                    storage.openOpsEntry(row.userId, guild.id, sessionId, category, now);
-                    enrolled++;
+                // Only enroll in ops session if they're currently in a voice channel
+                if (member.voice.channel) {
+                    const category = storage.classifyCategory(row.type, row.trainNumber);
+                    if (category) {
+                        storage.openOpsEntry(row.userId, guild.id, sessionId, category, now);
+                        enrolled++;
+                    }
                 }
             } catch {
                 failed++;

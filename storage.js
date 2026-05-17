@@ -284,6 +284,18 @@ function openOpsEntry(userId, guildId, sessionId, category, startAt) {
 }
 
 /**
+ * Closes a single user's open ops_log entry.
+ * Called when they leave voice mid-session.
+ */
+function closeOpsEntry(userId, guildId, endAt) {
+    db.prepare(`
+        UPDATE ops_log
+        SET end_at = ?, minutes = MAX(1, ROUND((? - start_at) / 60000.0))
+        WHERE user_id = ? AND guild_id = ? AND end_at IS NULL
+    `).run(endAt, endAt, userId, guildId);
+}
+
+/**
  * Closes the active session and writes minutes for all open entries.
  * Returns the session id that was closed, or null if no session was active.
  */
@@ -331,6 +343,38 @@ function getUserHours(userId) {
 }
 
 // ===============================
+// CREW VOICE CHANNELS
+// ===============================
+
+function addCrewVC(guildId, channelId, crewNumber) {
+    db.prepare(`
+        INSERT INTO crew_vcs (channel_id, guild_id, crew_number, created_at)
+        VALUES (?, ?, ?, ?)
+    `).run(channelId, guildId, crewNumber, Date.now());
+}
+
+function removeCrewVC(channelId) {
+    db.prepare(`DELETE FROM crew_vcs WHERE channel_id = ?`).run(channelId);
+}
+
+function getCrewVCs(guildId) {
+    return db.prepare(`
+        SELECT channel_id, crew_number FROM crew_vcs
+        WHERE guild_id = ? ORDER BY crew_number
+    `).all(guildId);
+}
+
+function getCrewVCByChannel(channelId) {
+    return db.prepare(`
+        SELECT channel_id, guild_id, crew_number FROM crew_vcs WHERE channel_id = ?
+    `).get(channelId) || null;
+}
+
+function clearAllCrewVCs(guildId) {
+    db.prepare(`DELETE FROM crew_vcs WHERE guild_id = ?`).run(guildId);
+}
+
+// ===============================
 // EXPORTS
 // ===============================
 
@@ -353,6 +397,12 @@ module.exports = {
     getActiveSession,
     openSession,
     openOpsEntry,
+    closeOpsEntry,
     closeSession,
     getUserHours,
+    addCrewVC,
+    removeCrewVC,
+    getCrewVCs,
+    getCrewVCByChannel,
+    clearAllCrewVCs,
 };

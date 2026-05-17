@@ -3,6 +3,7 @@ const { SlashCommandBuilder } = require('discord.js');
 const storage = require('../storage');
 const { hasAnyRole } = require('../utils/permissions');
 const { ADMIN_ROLE, HOST_ROLE } = require('../config');
+const { deleteAllCrewVCs } = require('../logging/crewVCManager');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -55,6 +56,7 @@ module.exports = {
 
         storage.clearAllTrainNumbers();
         storage.clearAllAssignments(guild.id);
+        await deleteAllCrewVCs(guild.client, guild.id);
 
         return { reset, failed, sessionClosed: sessionId !== null };
     }
