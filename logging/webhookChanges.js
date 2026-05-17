@@ -1,14 +1,15 @@
 const { EmbedBuilder } = require('discord.js');
 const config = require('../config/logging.json');
+const { sendLog } = require('./logHelper');
 
 module.exports = (client) => {
     client.on('webhookUpdate', channel => {
         const embed = new EmbedBuilder()
-            .setTitle("🪝 Webhook Updated")
+            .setTitle('🪝 Webhook Changed')
             .setColor(0x00aaff)
-            .addFields({ name: "Channel", value: `${channel}` })
+            .addFields({ name: 'Channel', value: `${channel} (${channel.name})` })
             .setTimestamp();
 
-        client.channels.cache.get(config.logChannel)?.send({ embeds: [embed] });
+        sendLog(client, config.logChannel, embed);
     });
 };

@@ -42,8 +42,8 @@ module.exports = {
                 const member = await guild.members.fetch(row.userId).catch(() => null);
                 if (!member) { failed++; continue; }
 
-                await member.setNickname(row.preferredName).catch(() => { failed++; });
-                reset++;
+                const ok = await member.setNickname(row.preferredName).then(() => true).catch(() => false);
+                if (ok) reset++; else failed++;
             } catch {
                 failed++;
             }

@@ -1,24 +1,28 @@
 const { EmbedBuilder } = require('discord.js');
 const config = require('../config/logging.json');
+const { sendLog } = require('./logHelper');
 
 module.exports = (client) => {
     client.on('threadCreate', thread => {
         const embed = new EmbedBuilder()
-            .setTitle("🧵 Thread Created")
+            .setTitle('🧵 Thread Created')
             .setColor(0x55ff55)
-            .addFields({ name: "Thread", value: `${thread}` })
+            .addFields(
+                { name: 'Thread', value: `${thread} (${thread.name})`, inline: true },
+                { name: 'Parent', value: `${thread.parent ?? 'Unknown'}`, inline: true }
+            )
             .setTimestamp();
 
-        client.channels.cache.get(config.logChannel)?.send({ embeds: [embed] });
+        sendLog(client, config.logChannel, embed);
     });
 
     client.on('threadDelete', thread => {
         const embed = new EmbedBuilder()
-            .setTitle("🧵 Thread Deleted")
+            .setTitle('🧵 Thread Deleted')
             .setColor(0xff5555)
-            .addFields({ name: "Thread", value: thread.name })
+            .addFields({ name: 'Thread', value: thread.name })
             .setTimestamp();
 
-        client.channels.cache.get(config.logChannel)?.send({ embeds: [embed] });
+        sendLog(client, config.logChannel, embed);
     });
 };

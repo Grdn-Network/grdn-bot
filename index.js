@@ -14,7 +14,8 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMessageReactions,
-        GatewayIntentBits.GuildPresences
+        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildVoiceStates
     ]
 });
 
@@ -37,7 +38,7 @@ require('./interactionHandler')(client);
 const loadLogging = require('./logging/loader');
 loadLogging(client);
 
-client.once('clientReady', () => {
+client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}`);
     const channel = client.channels.cache.get(CRASH_LOG_CHANNEL_ID);
     if (channel) {

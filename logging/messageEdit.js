@@ -1,22 +1,23 @@
 const { EmbedBuilder } = require('discord.js');
 const config = require('../config/logging.json');
+const { sendLog, truncate } = require('./logHelper');
 
 module.exports = (client) => {
     client.on('messageUpdate', (oldMsg, newMsg) => {
-        if (!newMsg.guild || !newMsg.author) return;
+        if (!newMsg.guild || !newMsg.author || newMsg.author.bot) return;
         if (oldMsg.content === newMsg.content) return;
 
         const embed = new EmbedBuilder()
-            .setTitle("✏️ Message Edited")
+            .setTitle('✏️ Message Edited')
             .setColor(0xffcc00)
             .addFields(
-                { name: "Author", value: `${newMsg.author}` },
-                { name: "Channel", value: `${newMsg.channel}` },
-                { name: "Before", value: oldMsg.content || "*No content*" },
-                { name: "After", value: newMsg.content || "*No content*" }
+                { name: 'Author', value: `${newMsg.author} (${newMsg.author.tag})`, inline: true },
+                { name: 'Channel', value: `${newMsg.channel}`, inline: true },
+                { name: 'Before', value: truncate(oldMsg.content) },
+                { name: 'After', value: truncate(newMsg.content) }
             )
             .setTimestamp();
 
-        client.channels.cache.get(config.logChannel)?.send({ embeds: [embed] });
+        sendLog(client, config.logChannel, embed);
     });
 };

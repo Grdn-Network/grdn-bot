@@ -1,20 +1,21 @@
 const { EmbedBuilder } = require('discord.js');
 const config = require('../config/logging.json');
+const { sendLog, truncate } = require('./logHelper');
 
 module.exports = (client) => {
     client.on('messageDelete', message => {
-        if (!message.guild || !message.author) return;
+        if (!message.guild || !message.author || message.author.bot) return;
 
         const embed = new EmbedBuilder()
-            .setTitle("🗑️ Message Deleted")
+            .setTitle('🗑️ Message Deleted')
             .setColor(0xff5555)
             .addFields(
-                { name: "Author", value: `${message.author}` },
-                { name: "Channel", value: `${message.channel}` },
-                { name: "Content", value: message.content || "*No content*" }
+                { name: 'Author', value: `${message.author} (${message.author.tag})`, inline: true },
+                { name: 'Channel', value: `${message.channel}`, inline: true },
+                { name: 'Content', value: truncate(message.content) }
             )
             .setTimestamp();
 
-        client.channels.cache.get(config.logChannel)?.send({ embeds: [embed] });
+        sendLog(client, config.logChannel, embed);
     });
 };
