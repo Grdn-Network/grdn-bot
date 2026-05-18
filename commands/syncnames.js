@@ -1,6 +1,8 @@
 // commands/syncnames.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const fetch = require('node-fetch');
+const path = require('path');
+const fs = require('fs');
 const db = require('../database/db');
 const storage = require('../storage');
 const { buildNickname } = require('../utils/nickname');
@@ -8,20 +10,17 @@ const { hasAnyRole } = require('../utils/permissions');
 const { ADMIN_ROLE, DISPATCH_QUAL_ROLE, DISPATCH_CHANNEL_ID } = require('../config');
 
 const FETCH_TIMEOUT_MS = 5000;
+const TUNNELS_FILE = path.join(__dirname, '..', 'host-tunnels.json');
 
 /**
- * Derives the Remote Dispatch link from the stored GRDNConnect URL.
- * grdn-connect.grdnnetwork.com → grdn.grdnnetwork.com
+ * Returns the tunnel subdomain for a Discord user ID, or null if not registered.
+ * Re-reads the file each time so edits on the VPS take effect without a restart.
  */
-function deriveRdLink(connectUrl) {
+function getHostSubdomain(userId) {
     try {
-        const url = new URL(connectUrl);
-        const host = url.hostname; // e.g. grdn-connect.grdnnetwork.com
-        if (!host.endsWith('.grdnnetwork.com')) return null;
-        const first = host.split('.')[0]; // e.g. grdn-connect
-        if (!first.endsWith('-connect')) return null;
-        const name = first.slice(0, -'-connect'.length); // e.g. grdn
-        return `${name}.grdnnetwork.com`;
+        const raw = fs.readFileSync(TUNNELS_FILE, 'utf8');
+        const map = JSON.parse(raw);
+        return map[userId] ?? null;
     } catch {
         return null;
     }
@@ -31,25 +30,28 @@ function deriveRdLink(connectUrl) {
  * Fetches server info from GRDNConnect and updates the dispatch embed.
  * Returns a short status string to append to the sync reply.
  */
-async function syncEmbedFromMod(guild) {
-    const baseUrl = storage.getDvBaseUrl();
-    if (!baseUrl) return '⚠️ DV connection not set — embed not updated.';
+async function syncEmbedFromMod(guild, userId) {
+    const subdomain = getHostSubdomain(userId);
+    if (!subdomain) return '⚠️ No tunnel registered for you — add your ID to host-tunnels.json.';
+
+    const connectUrl = `https://${subdomain}-connect.grdnnetwork.com`;
+    const rdLink = `${subdomain}.grdnnetwork.com`;
+
+    // Update the global DV URL to this host's connect URL for the session
+    storage.setDvUrl(connectUrl);
 
     let serverName, password;
     try {
-        const res = await fetch(`${baseUrl}/server-info`, { timeout: FETCH_TIMEOUT_MS });
+        const res = await fetch(`${connectUrl}/server-info`, { timeout: FETCH_TIMEOUT_MS });
         if (!res.ok) return '⚠️ GRDNConnect responded with an error — embed not updated.';
         const data = await res.json();
         serverName = data.serverName;
         password = data.password;
     } catch {
-        return '⚠️ Could not reach GRDNConnect — embed not updated.';
+        return '⚠️ Could not reach GRDNConnect — is the game running?';
     }
 
     if (!serverName && !password) return '⚠️ GRDNConnect returned no server info — is DVMP running?';
-
-    // Derive the RD link from the stored connect URL
-    const rdLink = deriveRdLink(baseUrl);
 
     // Update DB
     db.prepare(`
@@ -59,7 +61,7 @@ async function syncEmbedFromMod(guild) {
 
     if (serverName) db.prepare(`UPDATE dispatch_settings SET server_name = ? WHERE id = 1`).run(serverName);
     if (password)   db.prepare(`UPDATE dispatch_settings SET server_password = ? WHERE id = 1`).run(password);
-    if (rdLink)     db.prepare(`UPDATE dispatch_settings SET remote_link = ? WHERE id = 1`).run(rdLink);
+    db.prepare(`UPDATE dispatch_settings SET remote_link = ? WHERE id = 1`).run(rdLink);
 
     // Fetch and update the live embed
     const embedRow = db.prepare(`SELECT message_id FROM dispatch_embed WHERE id = 1`).get();
@@ -73,9 +75,9 @@ async function syncEmbedFromMod(guild) {
 
     const fieldMap = {
         'Server Name': serverName,
-        'Remote Dispatch Link': rdLink
+        'Remote Dispatch Link': rdLink,
+        ...(password ? { 'Server Password': password } : {})
     };
-    if (password) fieldMap['Server Password'] = password;
 
     const embed = EmbedBuilder.from(msg.embeds[0]);
     const updatedFields = embed.data.fields.map(f =>
@@ -85,7 +87,7 @@ async function syncEmbedFromMod(guild) {
     embed.setTimestamp();
     await msg.edit({ embeds: [embed] });
 
-    return `✅ Embed updated — **${serverName}**${rdLink ? ` | ${rdLink}` : ''}`;
+    return `✅ Embed updated — **${serverName}** | ${rdLink}`;
 }
 
 module.exports = {
@@ -138,7 +140,7 @@ module.exports = {
             }
         }
 
-        const embedStatus = await syncEmbedFromMod(guild);
+        const embedStatus = await syncEmbedFromMod(guild, interaction.user.id);
 
         return interaction.followUp({
             content:
