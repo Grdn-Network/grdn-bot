@@ -40,6 +40,27 @@ async function deleteAllCrewVCs(client, guildId) {
 }
 
 const handler = (client) => {
+    // On startup, schedule deletion for any tracked crew VCs that are already empty
+    client.once('ready', () => {
+        try {
+            const guilds = client.guilds.cache.values();
+            for (const guild of guilds) {
+                const vcs = storage.getCrewVCs(guild.id);
+                for (const vc of vcs) {
+                    const ch = guild.channels.cache.get(vc.channel_id);
+                    if (!ch) {
+                        // Channel no longer exists — clean up DB
+                        storage.removeCrewVC(vc.channel_id);
+                    } else if (ch.members.size === 0) {
+                        scheduleDelete(client, vc.channel_id);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('[crewVCManager] Startup check error:', err);
+        }
+    });
+
     client.on('voiceStateUpdate', (oldState, newState) => {
         try {
             // Someone left a crew VC — schedule deletion if now empty
