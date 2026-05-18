@@ -4,7 +4,7 @@ const path = require('path');
 require('dotenv').config();
 const { CRASH_LOG_CHANNEL_ID } = require('./config');
 
-const CRASH_LOG_PATH = 'C:\\GRDN\\crash.log';
+const CRASH_LOG_PATH = 'C:\\GRDN\\bot\\crash.log';
 fs.mkdirSync(path.dirname(CRASH_LOG_PATH), { recursive: true });
 
 const client = new Client({
