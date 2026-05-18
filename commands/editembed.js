@@ -3,6 +3,27 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const db = require('../database/db');
 const { ADMIN_ROLE, HOST_ROLE, DISPATCH_CHANNEL_ID } = require('../config');
 
+/**
+ * Derives the GRDNConnect URL from a Remote Dispatch link.
+ * e.g. https://rd.grdn.grdnnetwork.com → https://connect.grdn.grdnnetwork.com
+ * Returns null if the link isn't a grdnnetwork.com subdomain.
+ */
+function deriveDvConnectUrl(rdLink) {
+    try {
+        const raw = rdLink.trim();
+        const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+        if (!url.hostname.endsWith('.grdnnetwork.com')) return null;
+        // Extract the host-specific part: rd.grdn.grdnnetwork.com → grdn
+        const parts = url.hostname.split('.');
+        // parts: ['rd', 'grdn', 'grdnnetwork', 'com']  (length 4)
+        if (parts.length < 4) return null;
+        const hostName = parts[parts.length - 3]; // e.g. 'grdn'
+        return `https://connect.${hostName}.grdnnetwork.com`;
+    } catch {
+        return null;
+    }
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('editembed')
@@ -47,6 +68,16 @@ module.exports = {
         // Save new value to DB
         db.prepare(`UPDATE dispatch_settings SET ${field} = ? WHERE id = 1`).run(value);
 
+        // Auto-set DV connection when Remote Dispatch link is updated
+        let autoDvUrl = null;
+        if (field === 'remote_link') {
+            autoDvUrl = deriveDvConnectUrl(value);
+            if (autoDvUrl) {
+                const storage = require('../storage');
+                storage.setDvUrl(autoDvUrl);
+            }
+        }
+
         // Fetch embed message ID
         const row = db.prepare(`SELECT message_id FROM dispatch_embed WHERE id = 1`).get();
         if (!row) {
@@ -87,8 +118,12 @@ module.exports = {
 
         await msg.edit({ embeds: [embed] });
 
+        const dvNote = autoDvUrl
+            ? `\n🔗 DV connection auto-set to \`${autoDvUrl}\``
+            : '';
+
         return interaction.reply({
-            content: `✅ Updated **${fieldMap[field]}** to:\n\`${value}\``,
+            content: `✅ Updated **${fieldMap[field]}** to:\n\`${value}\`${dvNote}`,
             flags: 64
         });
     }
