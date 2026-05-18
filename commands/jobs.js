@@ -20,10 +20,10 @@ module.exports = {
             });
         }
 
-        const settings = storage.getDvSettings();
-        if (!settings?.dv_host || !settings?.dv_port) {
+        const baseUrl = storage.getDvBaseUrl();
+        if (!baseUrl) {
             return interaction.reply({
-                content: '❌ DV host/port not configured. Ask a staff member to run `/setdvconnection`.',
+                content: '❌ DV connection not configured. Ask a staff member to run `/setdvconnection`.',
                 flags: 64
             });
         }
@@ -32,7 +32,7 @@ module.exports = {
 
         try {
             const response = await fetch(
-                `http://${settings.dv_host}:${settings.dv_port}/jobs`,
+                `${baseUrl}/jobs`,
                 { timeout: FETCH_TIMEOUT_MS }
             );
 

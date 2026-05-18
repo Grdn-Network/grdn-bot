@@ -208,17 +208,32 @@ function clearAllAssignments(guildId) {
 // ===============================
 
 /**
- * Returns the stored DV host/port, or null if unset.
+ * Returns the full base URL for the DV connection, or null if unset.
+ * Supports both the new dv_url (full URL) and the legacy dv_host/dv_port format.
  */
-function getDvSettings() {
-    return db.prepare(`SELECT dv_host, dv_port FROM dv_settings WHERE id = 1`).get() || null;
+function getDvBaseUrl() {
+    const row = db.prepare(`SELECT dv_host, dv_port, dv_url FROM dv_settings WHERE id = 1`).get();
+    if (!row) return null;
+    if (row.dv_url) return row.dv_url.replace(/\/$/, ''); // strip trailing slash
+    if (row.dv_host && row.dv_port) return `http://${row.dv_host}:${row.dv_port}`;
+    return null;
 }
 
 /**
- * Saves the DV host and port.
+ * Saves a full DV connection URL (e.g. https://guardian.connect.grdnnetwork.com or http://1.2.3.4:7230).
  */
+function setDvUrl(url) {
+    db.prepare(`UPDATE dv_settings SET dv_url = ?, dv_host = NULL, dv_port = NULL WHERE id = 1`).run(url);
+}
+
+/** @deprecated Use getDvBaseUrl() instead */
+function getDvSettings() {
+    return db.prepare(`SELECT dv_host, dv_port, dv_url FROM dv_settings WHERE id = 1`).get() || null;
+}
+
+/** @deprecated Use setDvUrl() instead */
 function setDvSettings(host, port) {
-    db.prepare(`UPDATE dv_settings SET dv_host = ?, dv_port = ? WHERE id = 1`).run(host, port);
+    db.prepare(`UPDATE dv_settings SET dv_host = ?, dv_port = ?, dv_url = NULL WHERE id = 1`).run(host, port);
 }
 
 // ===============================
@@ -391,6 +406,8 @@ module.exports = {
     clearAllAssignments,
     getTrainBoardMessageId,
     setTrainBoardMessageId,
+    getDvBaseUrl,
+    setDvUrl,
     getDvSettings,
     setDvSettings,
     classifyCategory,

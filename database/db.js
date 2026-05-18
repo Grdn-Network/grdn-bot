@@ -82,13 +82,17 @@ db.prepare(`
     CREATE TABLE IF NOT EXISTS dv_settings (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         dv_host TEXT,
-        dv_port INTEGER
+        dv_port INTEGER,
+        dv_url  TEXT
     )
 `).run();
 
+// Migrate: add dv_url column if it doesn't exist yet
+try { db.prepare(`ALTER TABLE dv_settings ADD COLUMN dv_url TEXT`).run(); } catch {}
+
 db.prepare(`
-    INSERT OR IGNORE INTO dv_settings (id, dv_host, dv_port)
-    VALUES (1, NULL, NULL)
+    INSERT OR IGNORE INTO dv_settings (id, dv_host, dv_port, dv_url)
+    VALUES (1, NULL, NULL, NULL)
 `).run();
 
 /* -----------------------------------------------------
