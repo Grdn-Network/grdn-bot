@@ -13,11 +13,10 @@ function deriveDvConnectUrl(rdLink) {
         const raw = rdLink.trim();
         const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
         if (!url.hostname.endsWith('.grdnnetwork.com')) return null;
-        // Extract the host-specific part: rd.grdn.grdnnetwork.com → grdn
-        const parts = url.hostname.split('.');
-        // parts: ['rd', 'grdn', 'grdnnetwork', 'com']  (length 4)
-        if (parts.length < 4) return null;
-        const hostName = parts[parts.length - 3]; // e.g. 'grdn'
+        // RD links are {name}.grdnnetwork.com — e.g. grdn.grdnnetwork.com
+        // GRDNConnect lives at connect.{name}.grdnnetwork.com
+        const hostName = url.hostname.split('.')[0]; // e.g. 'grdn', 'red', 'star'
+        if (!hostName || hostName === 'connect') return null;
         return `https://connect.${hostName}.grdnnetwork.com`;
     } catch {
         return null;
