@@ -14,10 +14,10 @@ function deriveDvConnectUrl(rdLink) {
         const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
         if (!url.hostname.endsWith('.grdnnetwork.com')) return null;
         // RD links are {name}.grdnnetwork.com — e.g. grdn.grdnnetwork.com
-        // GRDNConnect lives at connect.{name}.grdnnetwork.com
+        // GRDNConnect lives at {name}-connect.grdnnetwork.com (single subdomain, covered by free Cloudflare cert)
         const hostName = url.hostname.split('.')[0]; // e.g. 'grdn', 'red', 'star'
-        if (!hostName || hostName === 'connect') return null;
-        return `https://connect.${hostName}.grdnnetwork.com`;
+        if (!hostName || hostName.endsWith('-connect')) return null;
+        return `https://${hostName}-connect.grdnnetwork.com`;
     } catch {
         return null;
     }
