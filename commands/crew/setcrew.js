@@ -84,10 +84,21 @@ module.exports = {
         const locoType = interaction.options.getString('loco_type');
         const preferredName = interaction.options.getString('preferred_name');
 
+        // Roles that don't operate trains — loco_type makes no sense for them
+        const NON_TRAIN_TYPES = ['Dispatcher', 'TrainMaster'];
+
         // TrainMaster type requires that role (or staff setting it for someone else)
         if (type === 'TrainMaster' && !targetUser && !hasAnyRole(member, [TRAINMASTER_ROLE, ...STAFF_ROLES])) {
             return interaction.reply({
                 content: '❌ You do not have the TrainMaster role.',
+                flags: 64
+            });
+        }
+
+        // Reject loco_type for non-train roles
+        if (locoType && type && NON_TRAIN_TYPES.includes(type)) {
+            return interaction.reply({
+                content: `❌ **${type}** does not operate a locomotive — \`loco_type\` is not applicable.`,
                 flags: 64
             });
         }
@@ -126,7 +137,9 @@ module.exports = {
                 });
             }
 
-            storage.upsertCrew(userIdToEdit, type ?? null, trainNumber ?? '', preferredName, locoType ?? null);
+            // Wipe loco_type for non-train roles — it has no meaning there
+            const resolvedLocoType = NON_TRAIN_TYPES.includes(type) ? null : (locoType ?? null);
+            storage.upsertCrew(userIdToEdit, type ?? null, trainNumber ?? '', preferredName, resolvedLocoType);
 
             await interaction.deferReply({ ephemeral: true });
 
@@ -150,8 +163,12 @@ module.exports = {
 
         const newType      = type        || existing.type;
         const newTrain     = trainNumber || existing.train_number;
-        const newLocoType  = locoType    ?? existing.loco_type ?? null;
         const newPreferred = preferredName || existing.preferred_name;
+
+        // Wipe loco_type when switching to a non-train role (or keep/update it otherwise)
+        const newLocoType = NON_TRAIN_TYPES.includes(newType)
+            ? null
+            : (locoType ?? existing.loco_type ?? null);
 
         // During an active official session a train number is mandatory —
         // without one the user can't be enrolled in ops tracking.

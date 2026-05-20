@@ -99,6 +99,9 @@ module.exports = {
                 if (member === null) { storage.removeCrew(userId); continue; }
                 if (member === undefined) { failed++; continue; } // fetch error, keep record
 
+                // Discord doesn't allow bots to rename the server owner — skip gracefully
+                if (member.id === guild.ownerId) { reset++; continue; }
+
                 const ok = await member.setNickname(preferredName).then(() => true).catch(() => false);
                 if (ok) reset++; else failed++;
             } catch {
