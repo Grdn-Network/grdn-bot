@@ -80,10 +80,14 @@ db.prepare(`
         id         INTEGER PRIMARY KEY AUTOINCREMENT,
         name       TEXT    NOT NULL UNIQUE,
         url        TEXT,
+        version    TEXT,
         note       TEXT,
         sort_order INTEGER NOT NULL DEFAULT 0
     )
 `).run();
+
+// Migrate: add version column to existing installs
+try { db.prepare(`ALTER TABLE mods ADD COLUMN version TEXT`).run(); } catch {}
 
 /* -----------------------------------------------------
    NO-OP EMBED

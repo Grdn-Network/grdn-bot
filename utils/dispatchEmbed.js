@@ -27,12 +27,13 @@ function buildDispatchEmbed() {
 
     // Build mods section from the structured mods table
     const mods = db.prepare(
-        `SELECT name, url, note FROM mods ORDER BY sort_order, id`
+        `SELECT name, url, version, note FROM mods ORDER BY sort_order, id`
     ).all();
     const modsValue = mods.length === 0
-        ? 'No mods configured — use `/addmod` to add required mods.'
+        ? 'No mods configured — use `/mod add` to add required mods.'
         : mods.map(m => {
             let line = m.url ? `[${m.name}](${m.url})` : m.name;
+            if (m.version) line += ` v${m.version}`;
             if (m.note) line += ` — ${m.note}`;
             return line;
           }).join('\n');
