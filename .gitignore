@@ -3,3 +3,4 @@ node_modules/
 crash.log
 *.sqlite
 *.sync-conflict-*
+*.bat
