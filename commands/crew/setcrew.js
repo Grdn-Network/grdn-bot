@@ -114,16 +114,17 @@ module.exports = {
                 });
             }
 
-            // During an active session, type and train_number are also required to participate
+            // During an active session, type, train_number, and loco_type (for train roles) are required
             if (storage.getActiveSession(interaction.guild.id)) {
                 const missing = [];
                 if (!type) missing.push('type');
                 if (!trainNumber) missing.push('train_number');
+                if (type && !NON_TRAIN_TYPES.includes(type) && !locoType) missing.push('loco_type');
                 if (missing.length > 0) {
                     return interaction.reply({
                         content:
                             `❌ An official ops session is active. Also required: **${missing.join(', ')}**\n` +
-                            `Example: \`/setcrew preferred_name:Dommie type:Road Crew train_number:001\``,
+                            `Example: \`/setcrew preferred_name:Dommie type:Road Crew train_number:001 loco_type:DE2\``,
                         flags: 64
                     });
                 }
@@ -170,16 +171,19 @@ module.exports = {
             ? null
             : (locoType ?? existing.loco_type ?? null);
 
-        // During an active official session a train number is mandatory —
-        // without one the user can't be enrolled in ops tracking.
-        if (storage.getActiveSession(interaction.guild.id) && !newTrain?.trim()) {
-            return interaction.reply({
-                content:
-                    '⚠️ An official ops session is active.\n' +
-                    'You must provide a **train number** to participate.\n' +
-                    'Example: `/setcrew train_number:001`',
-                flags: 64
-            });
+        // During an active session, train-operating crew must have both train_number and loco_type
+        if (storage.getActiveSession(interaction.guild.id)) {
+            const missing = [];
+            if (!newTrain?.trim()) missing.push('train_number');
+            if (!NON_TRAIN_TYPES.includes(newType) && !newLocoType) missing.push('loco_type');
+            if (missing.length > 0) {
+                return interaction.reply({
+                    content:
+                        `⚠️ An official ops session is active. Missing: **${missing.join(', ')}**\n` +
+                        `Example: \`/setcrew train_number:001 loco_type:DE2\``,
+                    flags: 64
+                });
+            }
         }
 
         if (newType === 'Road Crew' && newTrain && !/^\d{3}$/.test(newTrain)) {
