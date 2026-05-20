@@ -53,21 +53,36 @@ function findLoco(locoMap, trainNumber) {
 async function fetchLocoMap(guildId) {
   try {
     const dvUrl = storage.getDvBaseUrl();
-    if (!dvUrl) return null;
+    if (!dvUrl) {
+      console.log('[TrainBoard] fetchLocoMap: no DV URL set in DB — skipping fetch');
+      return null;
+    }
 
     const session = storage.getActiveSession(guildId);
-    if (!session) return null;
+    if (!session) {
+      console.log('[TrainBoard] fetchLocoMap: no active session for guild', guildId);
+      return null;
+    }
 
-    const res = await fetch(`${dvUrl}/locos`, { timeout: LOCO_FETCH_TIMEOUT_MS });
-    if (!res.ok) return null;
+    const url = `${dvUrl}/locos`;
+    console.log('[TrainBoard] fetchLocoMap: fetching', url);
+
+    const res = await fetch(url, { timeout: LOCO_FETCH_TIMEOUT_MS });
+    if (!res.ok) {
+      console.log('[TrainBoard] fetchLocoMap: HTTP', res.status, 'from', url);
+      return null;
+    }
 
     const locos = await res.json();
+    console.log('[TrainBoard] fetchLocoMap: got', locos.length, 'loco(s):', locos.map(l => l.locoId).join(', ') || '(none)');
+
     const map = new Map();
     for (const loco of locos) {
       map.set(normalizeLoco(loco.locoId), loco);
     }
     return map;
-  } catch {
+  } catch (err) {
+    console.error('[TrainBoard] fetchLocoMap error:', err.message);
     return null;
   }
 }
