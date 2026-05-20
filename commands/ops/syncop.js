@@ -1,8 +1,6 @@
 // commands/ops/syncop.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js'); // EmbedBuilder used for log embed
 const fetch = require('node-fetch');
-const path = require('path');
-const fs = require('fs');
 const db = require('../../database/db');
 const storage = require('../../database/storage');
 const { hasAnyRole } = require('../../utils/permissions');
@@ -10,35 +8,23 @@ const { ADMIN_ROLE, DISPATCH_QUAL_ROLE, DISPATCH_CHANNEL_ID, TRAIN_BOARD_CHANNEL
 const { sendLog } = require('../../logging/logHelper');
 const loggingConfig = require('../../config/logging.json');
 const { updateTrainBoard } = require('../../utils/trainBoard');
-const { buildDispatchEmbed } = require('../../utils/dispatchEmbed');
+const { buildDispatchEmbed, deriveDvConnectUrl } = require('../../utils/dispatchEmbed');
 
 const FETCH_TIMEOUT_MS = 5000;
-const TUNNELS_FILE = path.join(__dirname, '..', '..', 'host-tunnels.json');
-
-/**
- * Returns the tunnel subdomain for a Discord user ID, or null if not registered.
- * Re-reads the file each time so edits on the VPS take effect without a restart.
- */
-function getHostSubdomain(userId) {
-    try {
-        const raw = fs.readFileSync(TUNNELS_FILE, 'utf8');
-        const map = JSON.parse(raw);
-        return map[userId] ?? null;
-    } catch {
-        return null;
-    }
-}
 
 /**
  * Fetches server info from GRDNConnect and updates the dispatch embed.
  * Returns a short status string to append to the sync reply.
  */
 async function syncEmbedFromMod(guild, userId) {
-    const subdomain = getHostSubdomain(userId);
-    if (!subdomain) return '⚠️ No tunnel registered for you — add your ID to host-tunnels.json.';
+    // Derive the GRDNConnect URL from the Remote Dispatch link already stored in DB.
+    // e.g. "guardian.grdnnetwork.com" → "https://guardian-connect.grdnnetwork.com"
+    const stored = db.prepare(`SELECT remote_link FROM dispatch_settings WHERE id = 1`).get();
+    const rdLink = stored?.remote_link;
+    if (!rdLink || rdLink === 'Not set') return '⚠️ Remote Dispatch link not set — run `/editembed field:remote_dispatch_link` first.';
 
-    const connectUrl = `https://${subdomain}-connect.grdnnetwork.com`;
-    const rdLink = `${subdomain}.grdnnetwork.com`;
+    const connectUrl = deriveDvConnectUrl(rdLink);
+    if (!connectUrl) return '⚠️ Could not derive GRDNConnect URL from Remote Dispatch link.';
 
     // Update the global DV URL to this host's connect URL for the session
     storage.setDvUrl(connectUrl);
