@@ -99,11 +99,13 @@ module.exports = {
                 if (member === null) { storage.removeCrew(userId); continue; }
                 if (member === undefined) { failed++; continue; } // fetch error, keep record
 
-                // Discord doesn't allow bots to rename the server owner — skip gracefully
-                if (member.id === guild.ownerId) { reset++; continue; }
-
-                const ok = await member.setNickname(preferredName).then(() => true).catch(() => false);
-                if (ok) reset++; else failed++;
+                try {
+                    await member.setNickname(preferredName);
+                    reset++;
+                } catch (err) {
+                    // 50013 = Missing Permissions (e.g. server owner) — not a real failure
+                    if (err?.code === 50013) { reset++; } else { failed++; }
+                }
             } catch {
                 failed++;
             }
