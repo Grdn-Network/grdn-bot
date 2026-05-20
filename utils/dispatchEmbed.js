@@ -35,7 +35,7 @@ function buildDispatchEmbed() {
             { name: 'Server Name',             value: opsActive ? (s.server_name     || 'Not set') : '—', inline: true  },
             { name: 'Server Password',         value: opsActive ? (s.server_password || 'Not set') : '—', inline: true  },
             { name: 'Remote Dispatch Link',    value: opsActive ? (s.remote_link     || 'Not set') : 'No operation started — check the Events tab for the next session.', inline: false },
-            { name: 'Remote Dispatch Password', value: opsActive ? (s.remote_password || 'Not set') : '—', inline: true  }
+            { name: 'Remote Dispatch Password', value: s.remote_password || 'Not set', inline: true  }
         )
         .setTimestamp();
 }
