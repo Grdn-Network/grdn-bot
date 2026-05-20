@@ -42,14 +42,32 @@ function normalizeLoco(id) {
  *   "L-034" + null       → "034"
  *   "DE2-034" + "LocoDE2"→ "DE2-034"  (already formatted)
  */
+// Maps DV's internal TrainCarType enum names → GRDN designators.
+// DV has renamed types across versions; this normalises them all.
+const DV_LOCO_TYPE_MAP = {
+    'shunter':       'DE2',   // old name for DE2 in pre-1.0 builds
+    'locoshunter':   'DE2',
+    'de2':           'DE2',
+    'de6':           'DE6',
+    'dh4':           'DH4',
+    'dm3':           'DM3',
+    's060':          'S060',
+    's282':          'S282',
+    'be2':           'BE2',
+    'handcar':       'HC',
+};
+
 function formatLocoId(locoId, locoType) {
   // Pull just the numeric/suffix part after the last hyphen (e.g. "L-034" → "034")
   const raw = String(locoId ?? '');
   const numPart = raw.includes('-') ? raw.split('-').pop() : raw;
 
   if (locoType) {
-    // Strip leading "Loco" from the enum name (e.g. "LocoDE2" → "DE2")
-    const typePart = locoType.replace(/^Loco/i, '');
+    // Normalise: strip "Loco" prefix, lowercase, look up in map
+    const stripped = locoType.replace(/^Loco/i, '');
+    const typePart = DV_LOCO_TYPE_MAP[stripped.toLowerCase()]
+                  || DV_LOCO_TYPE_MAP[locoType.toLowerCase()]
+                  || stripped;
     if (typePart) return `${typePart}-${numPart}`;
   }
 
