@@ -181,6 +181,8 @@ db.prepare(`UPDATE registrations SET type = 'Yard Crew' WHERE type = 'Shunter'`)
 
 // Add active flag — 1 = active, 0 = soft-deleted (kept for records)
 try { db.prepare(`ALTER TABLE registrations ADD COLUMN active INTEGER NOT NULL DEFAULT 1`).run(); } catch {}
+// Add loco_type — DV locomotive type (e.g. DE2, DH4) for precise train board matching
+try { db.prepare(`ALTER TABLE registrations ADD COLUMN loco_type TEXT`).run(); } catch {}
 // Ensure existing rows are marked active
 db.prepare(`UPDATE registrations SET active = 1 WHERE active IS NULL`).run();
 

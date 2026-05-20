@@ -41,7 +41,21 @@ module.exports = {
         )
         .addStringOption(option =>
             option.setName('train_number')
-                .setDescription('Train number')
+                .setDescription('Train number (e.g. 001)')
+        )
+        .addStringOption(option =>
+            option.setName('loco_type')
+                .setDescription('Locomotive type — used to match your loco in the game')
+                .addChoices(
+                    { name: 'DE2',     value: 'DE2'     },
+                    { name: 'DE6',     value: 'DE6'     },
+                    { name: 'DH4',     value: 'DH4'     },
+                    { name: 'DM3',     value: 'DM3'     },
+                    { name: 'S060',    value: 'S060'    },
+                    { name: 'S282',    value: 'S282'    },
+                    { name: 'BE2',     value: 'BE2'     },
+                    { name: 'Handcar', value: 'Handcar' }
+                )
         )
         .addStringOption(option =>
             option.setName('preferred_name')
@@ -67,6 +81,7 @@ module.exports = {
 
         const type = interaction.options.getString('type');
         const trainNumber = interaction.options.getString('train_number');
+        const locoType = interaction.options.getString('loco_type');
         const preferredName = interaction.options.getString('preferred_name');
 
         // TrainMaster type requires that role (or staff setting it for someone else)
@@ -111,7 +126,7 @@ module.exports = {
                 });
             }
 
-            storage.upsertCrew(userIdToEdit, type ?? null, trainNumber ?? '', preferredName);
+            storage.upsertCrew(userIdToEdit, type ?? null, trainNumber ?? '', preferredName, locoType ?? null);
 
             await interaction.deferReply({ ephemeral: true });
 
@@ -133,8 +148,9 @@ module.exports = {
             return interaction.editReply({ content: `✅ Profile created for <@${userIdToEdit}>.${ownerNote}` });
         }
 
-        const newType = type || existing.type;
-        const newTrain = trainNumber || existing.train_number;
+        const newType      = type        || existing.type;
+        const newTrain     = trainNumber || existing.train_number;
+        const newLocoType  = locoType    ?? existing.loco_type ?? null;
         const newPreferred = preferredName || existing.preferred_name;
 
         // During an active official session a train number is mandatory —
@@ -156,7 +172,7 @@ module.exports = {
             });
         }
 
-        storage.upsertCrew(userIdToEdit, newType, newTrain, newPreferred);
+        storage.upsertCrew(userIdToEdit, newType, newTrain, newPreferred, newLocoType);
 
         await interaction.deferReply({ ephemeral: true });
 

@@ -39,7 +39,7 @@ db.prepare(`
 function getAllCrew(guildId) {
         // Single-guild bot — guildId reserved for future multi-guild support
     const rows = db.prepare(`
-        SELECT user_id, type, train_number, preferred_name
+        SELECT user_id, type, train_number, loco_type, preferred_name
         FROM registrations
         WHERE active = 1
     `).all();
@@ -48,6 +48,7 @@ function getAllCrew(guildId) {
         userId: r.user_id,
         type: r.type,
         trainNumber: r.train_number,
+        locoType: r.loco_type ?? null,
         preferredName: r.preferred_name
     }));
 }
@@ -57,7 +58,7 @@ function getAllCrew(guildId) {
  */
 function getCrewByUserId(guildId, userId) {
     const row = db.prepare(`
-        SELECT user_id, type, train_number, preferred_name
+        SELECT user_id, type, train_number, loco_type, preferred_name
         FROM registrations
         WHERE user_id = ? AND active = 1
     `).get(userId);
@@ -68,6 +69,7 @@ function getCrewByUserId(guildId, userId) {
         userId: row.user_id,
         type: row.type,
         trainNumber: row.train_number,
+        locoType: row.loco_type ?? null,
         preferredName: row.preferred_name
     };
 }
@@ -151,24 +153,26 @@ function setTrainBoardMessageId(guildId, messageId) {
  */
 function getCrewRaw(userId) {
     return db.prepare(`
-        SELECT user_id, type, train_number, preferred_name
+        SELECT user_id, type, train_number, loco_type, preferred_name
         FROM registrations WHERE user_id = ? AND active = 1
     `).get(userId) || null;
 }
 
 /**
  * Insert or update a crew member's full profile.
+ * locoType is optional — pass null to leave it unchanged on update.
  */
-function upsertCrew(userId, type, trainNumber, preferredName) {
+function upsertCrew(userId, type, trainNumber, preferredName, locoType = null) {
     db.prepare(`
-        INSERT INTO registrations (user_id, type, train_number, preferred_name, active)
-        VALUES (?, ?, ?, ?, 1)
+        INSERT INTO registrations (user_id, type, train_number, loco_type, preferred_name, active)
+        VALUES (?, ?, ?, ?, ?, 1)
         ON CONFLICT(user_id) DO UPDATE SET
             type = excluded.type,
             train_number = excluded.train_number,
+            loco_type = excluded.loco_type,
             preferred_name = excluded.preferred_name,
             active = 1
-    `).run(userId, type, trainNumber, preferredName);
+    `).run(userId, type, trainNumber, locoType, preferredName);
 }
 
 /**

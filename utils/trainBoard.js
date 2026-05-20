@@ -33,16 +33,38 @@ function normalizeLoco(id) {
 }
 
 /**
- * Tries to match a crew member's train number to a loco returned by GRDNConnect.
- * Exact match first, then suffix match (crew enters "001", game returns "DE2-001").
+ * Tries to match a crew member's train number (+ optional loco type) to a loco
+ * returned by GRDNConnect.
+ *
+ * Priority:
+ *   1. Exact key match on full normalised ID
+ *   2. If locoType is set: find a loco whose game ID or locoType field contains
+ *      the type string AND whose ID ends with the train number
+ *   3. Number-only suffix fuzzy match (fallback — e.g. "001" → "de2 001")
  */
-function findLoco(locoMap, trainNumber) {
+function findLoco(locoMap, trainNumber, locoType) {
   if (!locoMap || !locoMap.size) return null;
-  const norm = normalizeLoco(trainNumber);
-  if (locoMap.has(norm)) return locoMap.get(norm);
-  for (const [id, data] of locoMap) {
-    if (id.endsWith(norm) || norm.endsWith(id)) return data;
+  const normNum  = normalizeLoco(trainNumber);
+  const normType = locoType ? normalizeLoco(locoType) : null;
+
+  // Pass 1: exact key
+  if (locoMap.has(normNum)) return locoMap.get(normNum);
+
+  // Pass 2: type-aware match (only when crew has a loco type set)
+  if (normType) {
+    for (const [id, data] of locoMap) {
+      const typeHit = id.includes(normType) ||
+                      normalizeLoco(data.locoType ?? '').includes(normType);
+      const numHit  = id.endsWith(normNum);
+      if (typeHit && numHit) return data;
+    }
   }
+
+  // Pass 3: number-only fuzzy fallback
+  for (const [id, data] of locoMap) {
+    if (id.endsWith(normNum) || normNum.endsWith(id)) return data;
+  }
+
   return null;
 }
 
@@ -121,14 +143,23 @@ async function updateTrainBoard(client, guildId, channelId) {
     const rows = [['#', 'DEP', 'DES', 'TRK', 'JOB', 'RMK']];
 
     for (const c of list) {
-      const liveData = findLoco(locoMap, c.trainNumber);
+      const liveData = findLoco(locoMap, c.trainNumber, c.locoType);
+
+      // Build the display ID for the # column:
+      // If we got live data, use the game's actual loco ID (most accurate).
+      // Otherwise fall back to "TYPE-number" if type is set, or just the number.
+      const displayId = liveData
+        ? liveData.locoId                                          // e.g. "DE2 001" from game
+        : c.locoType
+          ? `${c.locoType}-${c.trainNumber}`                      // e.g. "DE2-001" from profile
+          : c.trainNumber;                                         // e.g. "001"
 
       if (liveData && liveData.jobs && liveData.jobs.length > 0) {
         // Live game data — one row per job on this loco
         for (let i = 0; i < liveData.jobs.length; i++) {
           const j = liveData.jobs[i];
           rows.push([
-            i === 0 ? c.trainNumber : '',   // loco # only on the first row
+            i === 0 ? displayId : '',   // loco ID only on the first row
             j.departure   ?? '—',
             j.destination ?? '—',
             '—',
@@ -140,7 +171,7 @@ async function updateTrainBoard(client, guildId, channelId) {
         // No live data — fall back to manual /assign entry
         const assign = storage.getAssignmentByTrain(guildId, c.trainNumber);
         rows.push([
-          c.trainNumber,
+          displayId,
           assign?.dep || '—',
           assign?.des || '—',
           assign?.trk || '—',
