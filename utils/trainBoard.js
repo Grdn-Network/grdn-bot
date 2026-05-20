@@ -196,11 +196,11 @@ async function updateTrainBoard(client, guildId, channelId) {
         const assign = storage.getAssignmentByTrain(guildId, c.trainNumber);
         rows.push([
           displayId,
-          assign?.dep || '—',
-          assign?.des || '—',
-          assign?.trk || '—',
-          assign?.job || '—',
-          assign?.rmk || '—'
+          assign?.dep || 'XXX',
+          assign?.des || 'XXX',
+          assign?.trk || 'XXX',
+          assign?.job || 'XXX',
+          assign?.rmk || 'XXX'
         ]);
       }
     }
