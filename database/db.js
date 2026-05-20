@@ -71,6 +71,21 @@ db.prepare(`
 `).run();
 
 /* -----------------------------------------------------
+   MODS LIST
+   Structured table replaces the old mods_list text blob.
+   Each row: name (unique), url, note, sort_order
+----------------------------------------------------- */
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS mods (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT    NOT NULL UNIQUE,
+        url        TEXT,
+        note       TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0
+    )
+`).run();
+
+/* -----------------------------------------------------
    NO-OP EMBED
 ----------------------------------------------------- */
 db.prepare(`

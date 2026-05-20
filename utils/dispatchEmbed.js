@@ -19,18 +19,30 @@ const db = require('../database/db');
 function buildDispatchEmbed() {
     const s = db.prepare(`
         SELECT server_name, server_password, remote_link, remote_password,
-               setup_notes, mods_list, rd_setup, ops_active
+               setup_notes, rd_setup, ops_active
         FROM dispatch_settings WHERE id = 1
     `).get() || {};
 
     const opsActive = !!s.ops_active;
+
+    // Build mods section from the structured mods table
+    const mods = db.prepare(
+        `SELECT name, url, note FROM mods ORDER BY sort_order, id`
+    ).all();
+    const modsValue = mods.length === 0
+        ? 'No mods configured — use `/addmod` to add required mods.'
+        : mods.map(m => {
+            let line = m.url ? `[${m.name}](${m.url})` : m.name;
+            if (m.note) line += ` — ${m.note}`;
+            return line;
+          }).join('\n');
 
     return new EmbedBuilder()
         .setTitle('🚂 GRDN Operations')
         .setColor(0x2b2d31)
         .addFields(
             { name: '📋 Setup',                value: s.setup_notes || 'Not configured.', inline: false },
-            { name: '📦 Required Mods',        value: s.mods_list   || 'Not configured.', inline: false },
+            { name: '📦 Required Mods',        value: modsValue,                          inline: false },
             { name: '📡 Remote Dispatch Setup', value: s.rd_setup    || 'Not configured.', inline: false },
             { name: 'Server Name',             value: opsActive ? (s.server_name     || 'Not set') : '—', inline: true  },
             { name: 'Server Password',         value: opsActive ? (s.server_password || 'Not set') : '—', inline: true  },

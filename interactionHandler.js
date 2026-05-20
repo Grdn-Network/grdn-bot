@@ -34,6 +34,20 @@ module.exports = (client) => {
         if (!interaction.guild) return;
 
         // -----------------------------
+        // AUTOCOMPLETE HANDLER
+        // -----------------------------
+        if (interaction.isAutocomplete()) {
+            const command = client.commands.get(interaction.commandName);
+            if (!command?.autocomplete) return;
+            try {
+                await command.autocomplete(interaction);
+            } catch (err) {
+                console.error('[Autocomplete Error]', interaction.commandName, err);
+            }
+            return;
+        }
+
+        // -----------------------------
         // SLASH COMMAND HANDLER
         // -----------------------------
         if (interaction.isChatInputCommand()) {

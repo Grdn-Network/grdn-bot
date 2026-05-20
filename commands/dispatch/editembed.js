@@ -6,9 +6,9 @@ const { ADMIN_ROLE, HOST_ROLE, DISPATCH_CHANNEL_ID } = require('../../config');
 
 // Whitelist — maps choice value → DB column name and display label.
 // Column names are hardcoded here, never interpolated from user input.
+// mods_list removed — Required Mods are now managed via /addmod and /removemod
 const FIELD_MAP = {
     setup_notes:     { column: 'setup_notes',     label: 'Setup'                    },
-    mods_list:       { column: 'mods_list',        label: 'Required Mods'            },
     rd_setup:        { column: 'rd_setup',         label: 'Remote Dispatch Setup'    },
     server_name:     { column: 'server_name',      label: 'Server Name'              },
     server_password: { column: 'server_password',  label: 'Server Password'          },
@@ -26,7 +26,6 @@ module.exports = {
                 .setRequired(true)
                 .addChoices(
                     { name: 'Setup',                    value: 'setup_notes'     },
-                    { name: 'Required Mods',            value: 'mods_list'       },
                     { name: 'Remote Dispatch Setup',    value: 'rd_setup'        },
                     { name: 'Server Name',              value: 'server_name'     },
                     { name: 'Server Password',          value: 'server_password' },
