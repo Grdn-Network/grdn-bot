@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
-const { CRASH_LOG_CHANNEL_ID } = require('./config');
+const { CRASH_LOG_CHANNEL_ID, ADMIN_ROLE } = require('./config');
 
 const CRASH_LOG_PATH = 'C:\\GRDN\\bot\\crash.log';
 fs.mkdirSync(path.dirname(CRASH_LOG_PATH), { recursive: true });
@@ -21,22 +21,31 @@ const client = new Client({
 
 client.db = require('./database/db');
 
-// Load commands
+// Load commands — recursively walks commands/ subdirectories
 client.commands = new Collection();
-const commandsPath = path.join(__dirname, 'commands');
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-
-for (const file of commandFiles) {
-    const command = require(`./commands/${file}`);
-    client.commands.set(command.data.name, command);
+function loadCommands(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            loadCommands(fullPath);
+        } else if (entry.name.endsWith('.js')) {
+            const command = require(fullPath);
+            client.commands.set(command.data.name, command);
+        }
+    }
 }
+loadCommands(path.join(__dirname, 'commands'));
 
 // Load interaction handler
 require('./interactionHandler')(client);
 
-// Logging system
+// Logging system (audit loggers)
 const loadLogging = require('./logging/loader');
 loadLogging(client);
+
+// Event handlers (functional, not audit loggers)
+require('./utils/crewVCManager')(client);
+require('./events/opsVoiceTracker')(client);
 
 client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}`);

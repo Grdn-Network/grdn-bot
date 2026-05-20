@@ -34,9 +34,23 @@ db.prepare(`
 `).run();
 
 db.prepare(`
-    INSERT OR IGNORE INTO dispatch_settings 
+    INSERT OR IGNORE INTO dispatch_settings
     (id, server_name, server_password, remote_link, remote_password)
     VALUES (1, 'Not set', 'Not set', 'Not set', 'Not set')
+`).run();
+
+// Migrate: editable static sections for the unified Operations embed
+try { db.prepare(`ALTER TABLE dispatch_settings ADD COLUMN setup_notes TEXT`).run(); } catch {}
+try { db.prepare(`ALTER TABLE dispatch_settings ADD COLUMN mods_list   TEXT`).run(); } catch {}
+try { db.prepare(`ALTER TABLE dispatch_settings ADD COLUMN rd_setup    TEXT`).run(); } catch {}
+
+// Seed default text for any rows that have nulls (first run after migration)
+db.prepare(`
+    UPDATE dispatch_settings SET
+        setup_notes = COALESCE(setup_notes, 'Use \`/setcrew\` to create your crew profile and join an ops session. See <#1474625317359452415> for setup guides and <#1477255961537155243> for fundamentals.'),
+        mods_list   = COALESCE(mods_list,   'Mod list not yet configured. Staff: use \`/editembed field:mods_list\` to add the required mods.'),
+        rd_setup    = COALESCE(rd_setup,    'On the Remote Dispatch website you will be asked to choose a username — pick one you will remember and keep it consistent between sessions.')
+    WHERE id = 1
 `).run();
 
 /* -----------------------------------------------------
@@ -105,9 +119,13 @@ db.prepare(`
         started_by TEXT,
         started_at INTEGER NOT NULL,
         ended_by TEXT,
-        ended_at INTEGER
+        ended_at INTEGER,
+        session_type TEXT NOT NULL DEFAULT 'official'
     )
 `).run();
+
+// Migrate: add session_type if not present
+try { db.prepare(`ALTER TABLE ops_sessions ADD COLUMN session_type TEXT NOT NULL DEFAULT 'official'`).run(); } catch {}
 
 db.prepare(`
     CREATE TABLE IF NOT EXISTS ops_log (
@@ -124,6 +142,11 @@ db.prepare(`
 
 // Rename Shunter → Yard Crew
 db.prepare(`UPDATE registrations SET type = 'Yard Crew' WHERE type = 'Shunter'`).run();
+
+// Add active flag — 1 = active, 0 = soft-deleted (kept for records)
+try { db.prepare(`ALTER TABLE registrations ADD COLUMN active INTEGER NOT NULL DEFAULT 1`).run(); } catch {}
+// Ensure existing rows are marked active
+db.prepare(`UPDATE registrations SET active = 1 WHERE active IS NULL`).run();
 
 // Tracks one-time migrations so they never run twice
 db.prepare(`
@@ -147,6 +170,21 @@ if (!bonusGranted) {
     })();
     db.prepare(`INSERT INTO ops_meta (key, value) VALUES ('bonus_granted', '1')`).run();
 }
+
+/* -----------------------------------------------------
+   SESSION CREW — explicit opt-in per official session
+   Only users who run /setcrew while a session is active
+   are tracked here. opsVoiceTracker checks this before
+   logging hours, so informal /setcrew users are never
+   auto-enrolled in official ops hours.
+----------------------------------------------------- */
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS session_crew (
+        session_id INTEGER NOT NULL,
+        user_id    TEXT    NOT NULL,
+        PRIMARY KEY (session_id, user_id)
+    )
+`).run();
 
 /* -----------------------------------------------------
    CREW VOICE CHANNELS

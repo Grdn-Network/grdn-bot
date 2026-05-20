@@ -1,8 +1,8 @@
 const { EmbedBuilder } = require('discord.js');
 const config = require('../config/logging.json');
 const { sendLog } = require('./logHelper');
-const storage = require('../storage');
-const { updateTrainBoard } = require('../trainBoard');
+const storage = require('../database/storage');
+const { updateTrainBoard } = require('../utils/trainBoard');
 const { TRAIN_BOARD_CHANNEL_ID } = require('../config');
 
 module.exports = (client) => {
@@ -41,7 +41,7 @@ module.exports = (client) => {
             if (crew.train_number) {
                 storage.deleteAssignment(member.guild.id, crew.train_number);
             }
-            storage.deleteCrew(member.id);
+            storage.removeCrew(member.id);
 
             await updateTrainBoard(client, member.guild.id, TRAIN_BOARD_CHANNEL_ID)
                 .catch(err => console.error('[TrainBoard] Update failed on member leave:', err));

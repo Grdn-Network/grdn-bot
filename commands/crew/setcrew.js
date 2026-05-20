@@ -1,0 +1,180 @@
+// commands/crew/setcrew.js
+const { SlashCommandBuilder } = require('discord.js');
+const storage = require('../../database/storage');
+const { updateTrainBoard } = require('../../utils/trainBoard');
+const { buildNickname } = require('../../utils/nickname');
+const { hasAnyRole } = require('../../utils/permissions');
+const { TRAIN_BOARD_CHANNEL_ID, STAFF_ROLES, TRAINMASTER_ROLE } = require('../../config');
+
+/**
+ * Called when /setcrew runs during an active ops session.
+ * Adds the user to session_crew (the official opt-in list) regardless of VC status.
+ * If they're already in a VC, also opens an ops_log entry to start the hours clock.
+ * If they join a VC later, opsVoiceTracker will see them in session_crew and start it then.
+ */
+function enrollIfSessionActive(userId, guildId, type, trainNumber, isInVC) {
+    const session = storage.getActiveSession(guildId);
+    if (!session) return;
+    const category = storage.classifyCategory(type, trainNumber);
+    if (!category) return; // no valid type or train number — don't enroll
+    storage.addToSessionCrew(session.id, userId); // opt in regardless of VC status
+    if (isInVC) storage.openOpsEntry(userId, guildId, session.id, category, Date.now());
+}
+
+module.exports = {
+    data: new SlashCommandBuilder()
+        .setName('setcrew')
+        .setDescription('Create or edit a crew profile.')
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('Staff only: edit another user')
+        )
+        .addStringOption(option =>
+            option.setName('type')
+                .setDescription('Crew type')
+                .addChoices(
+                    { name: 'TrainMaster', value: 'TrainMaster' },
+                    { name: 'Dispatcher',  value: 'Dispatcher'  },
+                    { name: 'Yard Crew',   value: 'Yard Crew'   },
+                    { name: 'Road Crew',   value: 'Road Crew'   }
+                )
+        )
+        .addStringOption(option =>
+            option.setName('train_number')
+                .setDescription('Train number')
+        )
+        .addStringOption(option =>
+            option.setName('preferred_name')
+                .setDescription('Preferred name')
+        ),
+
+    async execute(interaction) {
+        const targetUser = interaction.options.getUser('user');
+        const member = interaction.member;
+
+        let userIdToEdit;
+        if (targetUser) {
+            if (!hasAnyRole(member, STAFF_ROLES)) {
+                return interaction.reply({
+                    content: "❌ You do not have permission to edit another user's profile.",
+                    flags: 64
+                });
+            }
+            userIdToEdit = targetUser.id;
+        } else {
+            userIdToEdit = interaction.user.id;
+        }
+
+        const type = interaction.options.getString('type');
+        const trainNumber = interaction.options.getString('train_number');
+        const preferredName = interaction.options.getString('preferred_name');
+
+        // TrainMaster type requires that role (or staff setting it for someone else)
+        if (type === 'TrainMaster' && !targetUser && !hasAnyRole(member, [TRAINMASTER_ROLE, ...STAFF_ROLES])) {
+            return interaction.reply({
+                content: '❌ You do not have the TrainMaster role.',
+                flags: 64
+            });
+        }
+
+        const existing = storage.getCrewRaw(userIdToEdit);
+
+        if (!existing) {
+            // preferred_name is always required
+            if (!preferredName) {
+                return interaction.reply({
+                    content: '❌ `preferred_name` is required to create a profile.',
+                    flags: 64
+                });
+            }
+
+            // During an active session, type and train_number are also required to participate
+            if (storage.getActiveSession(interaction.guild.id)) {
+                const missing = [];
+                if (!type) missing.push('type');
+                if (!trainNumber) missing.push('train_number');
+                if (missing.length > 0) {
+                    return interaction.reply({
+                        content:
+                            `❌ An official ops session is active. Also required: **${missing.join(', ')}**\n` +
+                            `Example: \`/setcrew preferred_name:Dommie type:Road Crew train_number:001\``,
+                        flags: 64
+                    });
+                }
+            }
+
+            // Validate Road Crew number format only when a number is provided
+            if (type === 'Road Crew' && trainNumber && !/^\d{3}$/.test(trainNumber)) {
+                return interaction.reply({
+                    content: '❌ Road Crew train numbers must be exactly **3 digits** (e.g., 001, 120, 999).',
+                    flags: 64
+                });
+            }
+
+            storage.upsertCrew(userIdToEdit, type ?? null, trainNumber ?? '', preferredName);
+
+            await interaction.deferReply({ ephemeral: true });
+
+            const guildMember = await interaction.guild.members.fetch(userIdToEdit).catch(() => null);
+            let ownerNote = '';
+            if (guildMember) {
+                const targetNick = buildNickname(type, trainNumber, preferredName);
+                await guildMember.setNickname(targetNick).catch(() => {});
+                const inVC = !!guildMember.voice.channel;
+                enrollIfSessionActive(userIdToEdit, interaction.guild.id, type, trainNumber, inVC);
+                if (guildMember.id === interaction.guild.ownerId && userIdToEdit === interaction.user.id) {
+                    ownerNote = `\n⚠️ Discord doesn't allow bots to rename the server owner. Set your nickname manually: \`${targetNick}\``;
+                }
+            }
+
+            await updateTrainBoard(interaction.client, interaction.guild.id, TRAIN_BOARD_CHANNEL_ID)
+                .catch(err => console.error('[TrainBoard] Update failed:', err));
+
+            return interaction.editReply({ content: `✅ Profile created for <@${userIdToEdit}>.${ownerNote}` });
+        }
+
+        const newType = type || existing.type;
+        const newTrain = trainNumber || existing.train_number;
+        const newPreferred = preferredName || existing.preferred_name;
+
+        // During an active official session a train number is mandatory —
+        // without one the user can't be enrolled in ops tracking.
+        if (storage.getActiveSession(interaction.guild.id) && !newTrain?.trim()) {
+            return interaction.reply({
+                content:
+                    '⚠️ An official ops session is active.\n' +
+                    'You must provide a **train number** to participate.\n' +
+                    'Example: `/setcrew train_number:001`',
+                flags: 64
+            });
+        }
+
+        if (newType === 'Road Crew' && newTrain && !/^\d{3}$/.test(newTrain)) {
+            return interaction.reply({
+                content: '❌ Road Crew train numbers must be exactly **3 digits** (e.g., 001, 120, 999).',
+                flags: 64
+            });
+        }
+
+        storage.upsertCrew(userIdToEdit, newType, newTrain, newPreferred);
+
+        await interaction.deferReply({ ephemeral: true });
+
+        const guildMember = await interaction.guild.members.fetch(userIdToEdit).catch(() => null);
+        let ownerNote = '';
+        if (guildMember) {
+            const targetNick = buildNickname(newType, newTrain, newPreferred);
+            await guildMember.setNickname(targetNick).catch(() => {});
+            const inVC = !!guildMember.voice.channel;
+            enrollIfSessionActive(userIdToEdit, interaction.guild.id, newType, newTrain, inVC);
+            if (guildMember.id === interaction.guild.ownerId) {
+                ownerNote = `\n⚠️ Discord doesn't allow bots to rename the server owner. Set your nickname manually: \`${targetNick}\``;
+            }
+        }
+
+        await updateTrainBoard(interaction.client, interaction.guild.id, TRAIN_BOARD_CHANNEL_ID)
+            .catch(err => console.error('[TrainBoard] Update failed:', err));
+
+        return interaction.editReply({ content: `✅ Profile updated and nickname synced for <@${userIdToEdit}>.${ownerNote}` });
+    }
+};

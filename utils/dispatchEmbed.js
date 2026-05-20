@@ -1,0 +1,78 @@
+// utils/dispatchEmbed.js
+// Single source of truth for the GRDN Operations embed.
+// Every command that reads or writes the embed goes through here,
+// so the DB and the Discord message are always in sync.
+
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const db = require('../database/db');
+
+/**
+ * Reads all dispatch_settings and returns a fully-built EmbedBuilder.
+ * Sections (top → bottom):
+ *   📋 Setup          — editable, static instructions
+ *   📦 Required Mods  — editable, mod list with links
+ *   📡 Remote Dispatch Setup — editable, RD username instructions
+ *   Server Name / Server Password (inline)
+ *   Remote Dispatch Link
+ *   Remote Dispatch Password
+ */
+function buildDispatchEmbed() {
+    const s = db.prepare(`
+        SELECT server_name, server_password, remote_link, remote_password,
+               setup_notes, mods_list, rd_setup
+        FROM dispatch_settings WHERE id = 1
+    `).get() || {};
+
+    return new EmbedBuilder()
+        .setTitle('🚂 GRDN Operations')
+        .setColor(0x2b2d31)
+        .addFields(
+            { name: '📋 Setup',                value: s.setup_notes || 'Not configured.', inline: false },
+            { name: '📦 Required Mods',        value: s.mods_list   || 'Not configured.', inline: false },
+            { name: '📡 Remote Dispatch Setup', value: s.rd_setup    || 'Not configured.', inline: false },
+            { name: 'Server Name',             value: s.server_name     || 'Not set', inline: true  },
+            { name: 'Server Password',         value: s.server_password || 'Not set', inline: true  },
+            { name: 'Remote Dispatch Link',    value: s.remote_link     || 'Not set', inline: false },
+            { name: 'Remote Dispatch Password', value: s.remote_password || 'Not set', inline: true  }
+        )
+        .setTimestamp();
+}
+
+/**
+ * The button row that lives below the embed.
+ * Returned as an array so it can be spread directly into components: [].
+ */
+function buildDispatchComponents() {
+    return [
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('syncnames_btn')
+                .setLabel('Start Official Operation')
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId('endop_btn')
+                .setLabel('End Official Operation')
+                .setStyle(ButtonStyle.Danger)
+        )
+    ];
+}
+
+/**
+ * Derives the GRDNConnect URL from a Remote Dispatch link.
+ * e.g. grdn.grdnnetwork.com → https://grdn-connect.grdnnetwork.com
+ * Returns null if the link isn't a recognised grdnnetwork.com subdomain.
+ */
+function deriveDvConnectUrl(rdLink) {
+    try {
+        const raw = rdLink.trim();
+        const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+        if (!url.hostname.endsWith('.grdnnetwork.com')) return null;
+        const hostName = url.hostname.split('.')[0];
+        if (!hostName || hostName.endsWith('-connect')) return null;
+        return `https://${hostName}-connect.grdnnetwork.com`;
+    } catch {
+        return null;
+    }
+}
+
+module.exports = { buildDispatchEmbed, buildDispatchComponents, deriveDvConnectUrl };
