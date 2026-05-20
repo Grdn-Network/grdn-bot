@@ -1,98 +1,141 @@
 // utils/trainBoard.js
-// Assumes discord.js v14
+// Builds and maintains the sticky Train Board embed.
+// When an ops session is active and GRDNConnect is reachable, loco→job data
+// is pulled live from the game. Falls back to manual /assign entries otherwise.
 
-const { ChannelType, PermissionFlagsBits } = require('discord.js');
-
-// ==== STORAGE INTERFACE ====
-// getAllCrew(): returns array of { userId, type, trainNumber }
-// getAssignmentByTrain(trainNumber): returns { dep, des, trk, job, rmk } or null
-// setAssignment(trainNumber, data): upsert assignment
-// getTrainBoardMessageId(guildId): string | null
-// setTrainBoardMessageId(guildId, messageId): void
-
+const { ChannelType } = require('discord.js');
+const fetch = require('node-fetch');
 const storage = require('../database/storage');
+
+const LOCO_FETCH_TIMEOUT_MS = 2000;
 
 // ==== MONOSPACED TABLE ====
 
 function pad(str, len) {
   str = String(str ?? '');
-  if (str.length >= len) return str;
-  return str + ' '.repeat(len - str.length);
+  return str.length >= len ? str : str + ' '.repeat(len - str.length);
 }
 
 function buildMonospacedTable(rows) {
   if (!rows.length) return '';
-  const cols = rows[0].length;
-  const widths = new Array(cols).fill(0);
-
-  for (const row of rows) {
-    row.forEach((cell, i) => {
-      const len = String(cell ?? '').length;
-      if (len > widths[i]) widths[i] = len;
-    });
-  }
-
+  const widths = rows[0].map((_, i) =>
+    Math.max(...rows.map(r => String(r[i] ?? '').length))
+  );
   return rows
-    .map(row =>
-      row
-        .map((cell, i) => pad(cell ?? '', widths[i]))
-        .join(' | ')
-    )
+    .map(row => row.map((cell, i) => pad(cell ?? '', widths[i])).join(' | '))
     .join('\n');
+}
+
+// ==== LIVE LOCO DATA ====
+
+function normalizeLoco(id) {
+  return String(id ?? '').toLowerCase().trim();
+}
+
+/**
+ * Tries to match a crew member's train number to a loco returned by GRDNConnect.
+ * Exact match first, then suffix match (crew enters "001", game returns "DE2-001").
+ */
+function findLoco(locoMap, trainNumber) {
+  if (!locoMap || !locoMap.size) return null;
+  const norm = normalizeLoco(trainNumber);
+  if (locoMap.has(norm)) return locoMap.get(norm);
+  for (const [id, data] of locoMap) {
+    if (id.endsWith(norm) || norm.endsWith(id)) return data;
+  }
+  return null;
+}
+
+/**
+ * Fetches /locos from GRDNConnect and returns a Map<normalizedLocoId, locoData>.
+ * Returns null if there's no DV URL, no active session, or the fetch fails.
+ */
+async function fetchLocoMap(guildId) {
+  try {
+    const dvUrl = storage.getDvBaseUrl();
+    if (!dvUrl) return null;
+
+    const session = storage.getActiveSession(guildId);
+    if (!session) return null;
+
+    const res = await fetch(`${dvUrl}/locos`, { timeout: LOCO_FETCH_TIMEOUT_MS });
+    if (!res.ok) return null;
+
+    const locos = await res.json();
+    const map = new Map();
+    for (const loco of locos) {
+      map.set(normalizeLoco(loco.locoId), loco);
+    }
+    return map;
+  } catch {
+    return null;
+  }
 }
 
 // ==== TRAIN BOARD UPDATE ====
 
 async function updateTrainBoard(client, guildId, channelId) {
-  const guild = await client.guilds.fetch(guildId);
+  const guild   = await client.guilds.fetch(guildId);
   const channel = await guild.channels.fetch(channelId);
   if (!channel || channel.type !== ChannelType.GuildText) return;
 
-  const crew = await storage.getAllCrew(guildId);
-  // Filter: must have type + trainNumber, and not Dispatch
+  const crew     = storage.getAllCrew(guildId);
   const filtered = crew.filter(
-    c =>
-      c.type &&
-      c.trainNumber &&
-      c.type.toLowerCase() !== 'dispatcher'
+    c => c.type && c.trainNumber && c.type.toLowerCase() !== 'dispatcher'
   );
 
-  // Group by type
+  // Group by crew type
   const byType = new Map();
   for (const c of filtered) {
     const key = c.type.toUpperCase();
     if (!byType.has(key)) byType.set(key, []);
     byType.get(key).push(c);
   }
-
-  // Sort each group by trainNumber (string compare)
-  for (const [type, list] of byType) {
+  for (const list of byType.values()) {
     list.sort((a, b) => String(a.trainNumber).localeCompare(String(b.trainNumber)));
   }
 
-  let descriptionParts = [];
+  // Attempt live loco-to-job data from GRDNConnect
+  const locoMap = await fetchLocoMap(guildId);
+
+  const descriptionParts = [];
 
   for (const [type, list] of byType) {
     descriptionParts.push(`**${type}**`);
 
-    const rows = [];
-    // Header
-    rows.push(['#', 'DEP', 'DES', 'TRK', 'JOB', 'RMK']);
+    const rows = [['#', 'DEP', 'DES', 'TRK', 'JOB', 'RMK']];
 
     for (const c of list) {
-      const assign = await storage.getAssignmentByTrain(guildId, c.trainNumber);
-      rows.push([
-        c.trainNumber,
-        assign?.dep || '—',
-        assign?.des || '—',
-        assign?.trk || '—',
-        assign?.job || '—',
-        assign?.rmk || '—'
-      ]);
+      const liveData = findLoco(locoMap, c.trainNumber);
+
+      if (liveData && liveData.jobs && liveData.jobs.length > 0) {
+        // Live game data — one row per job on this loco
+        for (let i = 0; i < liveData.jobs.length; i++) {
+          const j = liveData.jobs[i];
+          rows.push([
+            i === 0 ? c.trainNumber : '',   // loco # only on the first row
+            j.departure   ?? '—',
+            j.destination ?? '—',
+            '—',
+            j.jobId       ?? '—',
+            '—'
+          ]);
+        }
+      } else {
+        // No live data — fall back to manual /assign entry
+        const assign = storage.getAssignmentByTrain(guildId, c.trainNumber);
+        rows.push([
+          c.trainNumber,
+          assign?.dep || '—',
+          assign?.des || '—',
+          assign?.trk || '—',
+          assign?.job || '—',
+          assign?.rmk || '—'
+        ]);
+      }
     }
 
-    const table = buildMonospacedTable(rows);
-    descriptionParts.push('```text\n' + table + '\n```');
+    descriptionParts.push('```text\n' + buildMonospacedTable(rows) + '\n```');
   }
 
   if (descriptionParts.length === 0) {
@@ -105,26 +148,21 @@ async function updateTrainBoard(client, guildId, channelId) {
     timestamp: new Date().toISOString(),
   };
 
-  // Sticky behavior: edit existing message if possible
-  let messageId = await storage.getTrainBoardMessageId(guildId);
-  let message = null;
+  // Sticky: edit the existing pinned message, or post a new one
+  let messageId = storage.getTrainBoardMessageId(guildId);
+  let message   = null;
 
   if (messageId) {
-    try {
-      message = await channel.messages.fetch(messageId);
-    } catch {
-      message = null;
-    }
+    try { message = await channel.messages.fetch(messageId); }
+    catch { message = null; }
   }
 
   if (message) {
     await message.edit({ embeds: [embed] });
   } else {
     const sent = await channel.send({ embeds: [embed] });
-    await storage.setTrainBoardMessageId(guildId, sent.id);
+    storage.setTrainBoardMessageId(guildId, sent.id);
   }
 }
 
-module.exports = {
-  updateTrainBoard,
-};
+module.exports = { updateTrainBoard };
