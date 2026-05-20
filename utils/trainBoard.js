@@ -200,12 +200,17 @@ async function updateTrainBoard(client, guildId, channelId) {
         // Live game data — one row per job on this loco
         for (let i = 0; i < liveData.jobs.length; i++) {
           const j = liveData.jobs[i];
+          // Prefix ! when job is not yet accepted (Available) so crew can see
+          // it's unassigned — still listed so staging/shunting flows aren't lost
+          const jobDisplay = j.state === 'InProgress'
+            ? (j.jobId ?? '—')
+            : `!${j.jobId ?? '—'}`;
           rows.push([
             i === 0 ? displayId : '',   // loco ID only on the first row
             j.departure   ?? '—',
             j.destination ?? '—',
             '—',
-            j.jobId       ?? '—',
+            jobDisplay,
             '—'
           ]);
         }
