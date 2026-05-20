@@ -19,9 +19,11 @@ const db = require('../database/db');
 function buildDispatchEmbed() {
     const s = db.prepare(`
         SELECT server_name, server_password, remote_link, remote_password,
-               setup_notes, mods_list, rd_setup
+               setup_notes, mods_list, rd_setup, ops_active
         FROM dispatch_settings WHERE id = 1
     `).get() || {};
+
+    const opsActive = !!s.ops_active;
 
     return new EmbedBuilder()
         .setTitle('🚂 GRDN Operations')
@@ -30,10 +32,10 @@ function buildDispatchEmbed() {
             { name: '📋 Setup',                value: s.setup_notes || 'Not configured.', inline: false },
             { name: '📦 Required Mods',        value: s.mods_list   || 'Not configured.', inline: false },
             { name: '📡 Remote Dispatch Setup', value: s.rd_setup    || 'Not configured.', inline: false },
-            { name: 'Server Name',             value: s.server_name     || 'Not set', inline: true  },
-            { name: 'Server Password',         value: s.server_password || 'Not set', inline: true  },
-            { name: 'Remote Dispatch Link',    value: s.remote_link     || 'Not set', inline: false },
-            { name: 'Remote Dispatch Password', value: s.remote_password || 'Not set', inline: true  }
+            { name: 'Server Name',             value: opsActive ? (s.server_name     || 'Not set') : '—', inline: true  },
+            { name: 'Server Password',         value: opsActive ? (s.server_password || 'Not set') : '—', inline: true  },
+            { name: 'Remote Dispatch Link',    value: opsActive ? (s.remote_link     || 'Not set') : 'No operation started — check the Events tab for the next session.', inline: false },
+            { name: 'Remote Dispatch Password', value: opsActive ? (s.remote_password || 'Not set') : '—', inline: true  }
         )
         .setTimestamp();
 }

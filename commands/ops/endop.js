@@ -1,12 +1,14 @@
 // commands/ops/endop.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const db = require('../../database/db');
 const storage = require('../../database/storage');
 const { hasAnyRole } = require('../../utils/permissions');
-const { ADMIN_ROLE, HOST_ROLE, TRAIN_BOARD_CHANNEL_ID } = require('../../config');
+const { ADMIN_ROLE, HOST_ROLE, DISPATCH_CHANNEL_ID, TRAIN_BOARD_CHANNEL_ID } = require('../../config');
 const { deleteAllCrewVCs } = require('../../utils/crewVCManager');
 const { sendLog } = require('../../logging/logHelper');
 const loggingConfig = require('../../config/logging.json');
 const { updateTrainBoard } = require('../../utils/trainBoard');
+const { buildDispatchEmbed } = require('../../utils/dispatchEmbed');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -42,6 +44,21 @@ module.exports = {
         // Rebuild train board to reflect cleared state
         updateTrainBoard(interaction.client, interaction.guild.id, TRAIN_BOARD_CHANNEL_ID)
             .catch(err => console.error('[TrainBoard] endop update failed:', err));
+
+        // Mark op inactive and update the dispatch embed to "no op" state
+        try {
+            db.prepare(`UPDATE dispatch_settings SET ops_active = 0 WHERE id = 1`).run();
+            const embedRow = db.prepare(`SELECT message_id FROM dispatch_embed WHERE id = 1`).get();
+            if (embedRow) {
+                const dispatchChannel = interaction.guild.channels.cache.get(DISPATCH_CHANNEL_ID);
+                if (dispatchChannel) {
+                    const msg = await dispatchChannel.messages.fetch(embedRow.message_id).catch(() => null);
+                    if (msg) await msg.edit({ embeds: [buildDispatchEmbed()], components: msg.components });
+                }
+            }
+        } catch (err) {
+            console.error('[endop] Embed update failed:', err);
+        }
 
         return interaction.followUp({
             content:

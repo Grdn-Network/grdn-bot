@@ -65,6 +65,7 @@ async function syncEmbedFromMod(guild, userId) {
     if (serverName) db.prepare(`UPDATE dispatch_settings SET server_name = ? WHERE id = 1`).run(serverName);
     if (password)   db.prepare(`UPDATE dispatch_settings SET server_password = ? WHERE id = 1`).run(password);
     db.prepare(`UPDATE dispatch_settings SET remote_link = ? WHERE id = 1`).run(rdLink);
+    db.prepare(`UPDATE dispatch_settings SET ops_active = 1 WHERE id = 1`).run();
 
     // Rebuild the live embed from DB state (preserves all static sections)
     const embedRow = db.prepare(`SELECT message_id FROM dispatch_embed WHERE id = 1`).get();

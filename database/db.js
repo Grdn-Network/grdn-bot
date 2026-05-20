@@ -43,14 +43,31 @@ db.prepare(`
 try { db.prepare(`ALTER TABLE dispatch_settings ADD COLUMN setup_notes TEXT`).run(); } catch {}
 try { db.prepare(`ALTER TABLE dispatch_settings ADD COLUMN mods_list   TEXT`).run(); } catch {}
 try { db.prepare(`ALTER TABLE dispatch_settings ADD COLUMN rd_setup    TEXT`).run(); } catch {}
+// Migrate: ops_active flag — 1 while a session is running, 0 otherwise
+try { db.prepare(`ALTER TABLE dispatch_settings ADD COLUMN ops_active INTEGER NOT NULL DEFAULT 0`).run(); } catch {}
 
 // Seed default text for any rows that have nulls (first run after migration)
 db.prepare(`
     UPDATE dispatch_settings SET
-        setup_notes = COALESCE(setup_notes, 'Use \`/setcrew\` to create your crew profile and join an ops session. See <#1474625317359452415> for setup guides and <#1477255961537155243> for fundamentals.'),
-        mods_list   = COALESCE(mods_list,   'Mod list not yet configured. Staff: use \`/editembed field:mods_list\` to add the required mods.'),
+        setup_notes = COALESCE(setup_notes, 'Use \`/setcrew\` to create your crew profile and join an ops session. Check out <#1474625317359452415> and <#1477255961537155243>.'),
+        mods_list   = COALESCE(mods_list,   'Mod list not yet configured.'),
         rd_setup    = COALESCE(rd_setup,    'On the Remote Dispatch website you will be asked to choose a username — pick one you will remember and keep it consistent between sessions.')
     WHERE id = 1
+`).run();
+
+// Fix previously-seeded defaults that had incorrect wording
+db.prepare(`
+    UPDATE dispatch_settings
+    SET setup_notes = 'Use \`/setcrew\` to create your crew profile and join an ops session. Check out <#1474625317359452415> and <#1477255961537155243>.'
+    WHERE id = 1
+      AND setup_notes = 'Use \`/setcrew\` to create your crew profile and join an ops session. See <#1474625317359452415> for setup guides and <#1477255961537155243> for fundamentals.'
+`).run();
+
+db.prepare(`
+    UPDATE dispatch_settings
+    SET mods_list = 'Mod list not yet configured.'
+    WHERE id = 1
+      AND mods_list = 'Mod list not yet configured. Staff: use \`/editembed field:mods_list\` to add the required mods.'
 `).run();
 
 /* -----------------------------------------------------
