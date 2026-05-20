@@ -33,6 +33,30 @@ function normalizeLoco(id) {
 }
 
 /**
+ * Formats a loco display ID for the train board.
+ * Strips the generic "L-" prefix from the game ID and replaces it with the
+ * actual type designator when available.
+ *
+ * Examples:
+ *   "L-034" + "LocoDE2"  → "DE2-034"
+ *   "L-034" + null       → "034"
+ *   "DE2-034" + "LocoDE2"→ "DE2-034"  (already formatted)
+ */
+function formatLocoId(locoId, locoType) {
+  // Pull just the numeric/suffix part after the last hyphen (e.g. "L-034" → "034")
+  const raw = String(locoId ?? '');
+  const numPart = raw.includes('-') ? raw.split('-').pop() : raw;
+
+  if (locoType) {
+    // Strip leading "Loco" from the enum name (e.g. "LocoDE2" → "DE2")
+    const typePart = locoType.replace(/^Loco/i, '');
+    if (typePart) return `${typePart}-${numPart}`;
+  }
+
+  return numPart;
+}
+
+/**
  * Tries to match a crew member's train number (+ optional loco type) to a loco
  * returned by GRDNConnect.
  *
@@ -145,13 +169,13 @@ async function updateTrainBoard(client, guildId, channelId) {
     for (const c of list) {
       const liveData = findLoco(locoMap, c.trainNumber, c.locoType);
 
-      // Build the display ID for the # column:
-      // If we got live data, use the game's actual loco ID (most accurate).
-      // Otherwise fall back to "TYPE-number" if type is set, or just the number.
+      // Build the display ID for the # column.
+      // Live data: use game locoId + game locoType to format (e.g. "DE2-034")
+      // No live data: use profile loco_type + train number, or bare number
       const displayId = liveData
-        ? liveData.locoId                                          // e.g. "DE2 001" from game
+        ? formatLocoId(liveData.locoId, liveData.locoType)        // e.g. "DE2-034"
         : c.locoType
-          ? `${c.locoType}-${c.trainNumber}`                      // e.g. "DE2-001" from profile
+          ? `${c.locoType}-${c.trainNumber}`                       // e.g. "DE2-001" from profile
           : c.trainNumber;                                         // e.g. "001"
 
       if (liveData && liveData.jobs && liveData.jobs.length > 0) {
