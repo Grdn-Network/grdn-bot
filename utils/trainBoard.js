@@ -43,18 +43,51 @@ function normalizeLoco(id) {
  *   "DE2-034" + "LocoDE2"→ "DE2-034"  (already formatted)
  */
 // Maps DV's internal TrainCarType enum names → GRDN designators.
-// DV has renamed types across versions; this normalises them all.
+// Confirmed against Assembly-CSharp.dll TrainCarType enum reflection.
 const DV_LOCO_TYPE_MAP = {
-    'shunter':       'DE2',   // old name for DE2 in pre-1.0 builds
-    'locoshunter':   'DE2',
-    'de2':           'DE2',
-    'de6':           'DE6',
-    'dh4':           'DH4',
-    'dm3':           'DM3',
-    's060':          'S060',
-    's282':          'S282',
-    'be2':           'BE2',
-    'handcar':       'HC',
+    // DE2 (Shunter)
+    'shunter':          'DE2',   // LocoShunter — pre-1.0 enum name
+    'locoshunter':      'DE2',
+    'de2':              'DE2',
+
+    // DE6 — enum value is "LocoDiesel", NOT "LocoDE6"
+    'diesel':           'DE6',
+    'locodiesel':       'DE6',
+    'de6':              'DE6',
+    'de6slug':          'DE6S',  // LocoDE6Slug
+    'locode6slug':      'DE6S',
+
+    // DH4
+    'dh4':              'DH4',
+    'locodh4':          'DH4',
+
+    // DM3
+    'dm3':              'DM3',
+    'locodm3':          'DM3',
+
+    // S060
+    's060':             'S060',
+    'locos060':         'S060',
+
+    // S282 — enum value is "LocoSteamHeavy"
+    's282':             'S282',
+    'steamheavy':       'S282',
+    'locosteamheavy':   'S282',
+    'tender':           'S282T', // Tender car for S282
+
+    // BE2 (Microshunter) — enum value is "LocoMicroshunter"
+    'be2':              'BE2',
+    'microshunter':     'BE2',
+    'locomicroshunter': 'BE2',
+
+    // DM1U (Railbus)
+    'railbus':          'DM1U',
+    'locorailbus':      'DM1U',
+    'dm1u':             'DM1U',
+    'locodm1u':         'DM1U',
+
+    // Handcar
+    'handcar':          'HC',
 };
 
 function formatLocoId(locoId, locoType) {
@@ -209,9 +242,9 @@ async function updateTrainBoard(client, guildId, channelId) {
             i === 0 ? displayId : '',   // loco ID only on the first row
             j.departure   ?? '—',
             j.destination ?? '—',
-            '—',
+            j.track       ?? '—',       // live destination track from game
             jobDisplay,
-            '—'
+            j.cargo       ?? '—'        // cargo type in RMK column
           ]);
         }
       } else {
