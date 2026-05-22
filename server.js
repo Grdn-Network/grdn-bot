@@ -7,6 +7,7 @@
 //   HTTP_SECRET — shared secret; set the same value in GRDNConnect settings
 
 const express = require('express');
+const storage = require('./database/storage');
 
 module.exports = function startServer(client) {
     const app    = express();
@@ -26,43 +27,52 @@ module.exports = function startServer(client) {
 
     // ── POST /radio-change ────────────────────────────────────────────────────
     // GRDNConnect pushes this when a player tunes to a different radio channel.
-    // Body: { discordUserId: string, vcId: string }
     //
-    // Moves the Discord user to the target VC.
-    // If they're not currently in any VC, does nothing (Discord won't allow it).
+    // Body: { trainNumber: string, vcId: string }
+    //
+    // The bot looks up which Discord user(s) are registered to that train
+    // number — no per-player Discord ID config needed in GRDNConnect.
+    // Multi-crewed trains: all crew on that train are moved.
     app.post('/radio-change', async (req, res) => {
-        const { discordUserId, vcId } = req.body ?? {};
+        const { trainNumber, vcId } = req.body ?? {};
 
-        if (!discordUserId || !vcId) {
-            return res.status(400).json({ error: 'Missing discordUserId or vcId' });
+        if (!trainNumber || !vcId) {
+            return res.status(400).json({ error: 'Missing trainNumber or vcId' });
         }
 
         // Acknowledge immediately — don't keep GRDNConnect waiting
         res.json({ ok: true });
 
         try {
-            // Find the member across all guilds the bot is in
             for (const [, guild] of client.guilds.cache) {
-                const member = await guild.members.fetch(discordUserId).catch(() => null);
-                if (!member) continue;
+                // Find all crew registered to this train number
+                const crew = storage.getAllCrew(guild.id)
+                    .filter(c => String(c.trainNumber) === String(trainNumber));
 
-                if (!member.voice?.channel) {
-                    console.log(`[Radio] ${discordUserId} not in a VC — skipping move`);
-                    return;
+                if (crew.length === 0) {
+                    console.log(`[Radio] No crew found for train ${trainNumber}`);
+                    continue;
                 }
 
-                // Already in the right channel — nothing to do
-                if (member.voice.channel.id === vcId) return;
+                for (const c of crew) {
+                    const member = await guild.members.fetch(c.userId).catch(() => null);
+                    if (!member) continue;
 
-                await member.voice.setChannel(vcId).catch(err => {
-                    console.error(`[Radio] Failed to move ${discordUserId}:`, err.message);
-                });
+                    if (!member.voice?.channel) {
+                        console.log(`[Radio] ${c.userId} (train ${trainNumber}) not in a VC — skipping`);
+                        continue;
+                    }
 
-                console.log(`[Radio] Moved ${discordUserId} → ${vcId}`);
-                return; // Found and handled — stop searching guilds
+                    // Already in the right channel
+                    if (member.voice.channel.id === vcId) continue;
+
+                    await member.voice.setChannel(vcId).catch(err => {
+                        console.error(`[Radio] Failed to move ${c.userId}:`, err.message);
+                    });
+
+                    console.log(`[Radio] Moved ${c.userId} (train ${trainNumber}) → ${vcId}`);
+                }
             }
-
-            console.warn(`[Radio] User ${discordUserId} not found in any guild`);
         } catch (err) {
             console.error('[Radio] Error handling radio-change:', err.message);
         }

@@ -1,12 +1,27 @@
 // commands/dispatch/call.js
 // /call train: — dispatch pages a train crew.
-// Pings registered crew members in the current channel so Discord notifies them.
+//
+// Two-layer notification:
+//   1. Immediate text ping in the current channel (Discord notification).
+//   2. Bot joins the crew's current VC and plays an audio alert, then leaves.
+//      Requires @discordjs/voice + ffmpeg on the VPS. If the library isn't
+//      installed the text ping still fires; the voice step fails silently.
+//
 // Staff only (Dispatch Qual, Admin, Host, DVMP Command).
 
 const { SlashCommandBuilder } = require('discord.js');
-const { hasAnyRole } = require('../../utils/permissions');
+const { hasAnyRole }  = require('../../utils/permissions');
 const { STAFF_ROLES } = require('../../config');
 const storage = require('../../database/storage');
+
+// voiceAlert is optional — if @discordjs/voice isn't installed the text ping
+// still works and this just logs a warning.
+let alertTrain;
+try {
+    ({ alertTrain } = require('../../utils/voiceAlert'));
+} catch {
+    alertTrain = null;
+}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -37,11 +52,21 @@ module.exports = {
             });
         }
 
+        // ── 1. Immediate text ping ────────────────────────────────────────────
         const mentions = crew.map(c => `<@${c.userId}>`).join(' ');
-
-        // Visible message — the @mention triggers Discord's normal notification
         await interaction.reply({
             content: `📻 ${mentions} — **Train ${train}**, contact dispatch.`,
         });
+
+        // ── 2. Voice alert — join their VC and play TTS (fire and forget) ─────
+        if (alertTrain) {
+            alertTrain(
+                interaction.guild,
+                train,
+                `Train ${train}, contact dispatch`
+            ).catch(err => {
+                console.error('[call] Voice alert failed:', err.message);
+            });
+        }
     },
 };
