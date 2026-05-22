@@ -1,22 +1,28 @@
 // utils/nickname.js
 
 /**
- * Builds a formatted Discord nickname based on crew type.
+ * Builds a formatted Discord nickname based on crew type and train number.
  *
- * TrainMaster → "!TOC | <trainNumber> | <preferredName>"
- * Dispatcher  → "!D | <trainNumber> | <preferredName>"
- * Yard Crew   → "#S | <trainNumber> | <preferredName>"
- * Road Crew   → "<trainNumber> | <preferredName>"
+ * With a train number:
+ *   TrainMaster → "!TOC | <train> | <name>"
+ *   Dispatcher  → "!D | <train> | <name>"
+ *   Yard Crew   → "#S | <train> | <name>"
+ *   Road Crew   → "<train> | <name>"
+ *
+ * Without a train number (profile created outside an active session):
+ *   TrainMaster → "!TOC | <name>"
+ *   Dispatcher  → "!D | <name>"
+ *   Yard Crew   → "#S | <name>"
+ *   Road Crew   → "<name>"
  */
 function buildNickname(type, trainNumber, preferredName) {
-    const hasTrain = trainNumber && String(trainNumber).trim();
+    const train = trainNumber && String(trainNumber).trim() ? String(trainNumber).trim() : null;
 
-    if (type === 'TrainMaster') return `!TOC | ${trainNumber} | ${preferredName}`;
-    if (type === 'Dispatcher')  return `!D | ${trainNumber} | ${preferredName}`;
-    if (type === 'Yard Crew')   return `#S | ${trainNumber} | ${preferredName}`;
-    if (hasTrain)               return `${trainNumber} | ${preferredName}`;
+    if (type === 'TrainMaster') return train ? `!TOC | ${train} | ${preferredName}` : `!TOC | ${preferredName}`;
+    if (type === 'Dispatcher')  return train ? `!D | ${train} | ${preferredName}`   : `!D | ${preferredName}`;
+    if (type === 'Yard Crew')   return train ? `#S | ${train} | ${preferredName}`   : `#S | ${preferredName}`;
+    if (train)                  return `${train} | ${preferredName}`;
 
-    // No type and no train number — bare profile, just the preferred name
     return preferredName;
 }
 

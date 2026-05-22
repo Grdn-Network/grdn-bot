@@ -11,12 +11,14 @@ module.exports = {
     DISPATCH_QUAL_ROLE: '1474628588568580146',
     HOST_ROLE: '1482790161174761542',
     TRAINMASTER_ROLE: '1474629091650179132',
+    DVMP_COMMAND_ROLE: '1503297126585860187', // dvmp-command — pseudo-admin
 
     // Roles allowed to perform staff actions
     STAFF_ROLES: [
         '1474625834798022828', // Admin
         '1474628588568580146', // Dispatch Qual
         '1482790161174761542', // Host
+        '1503297126585860187', // DVMP Command
     ],
 
     // XFER allowed roles
@@ -24,6 +26,7 @@ module.exports = {
         '1474625834798022828', // Admin
         '1474628588568580146', // Dispatch Qual
         '1474629091650179132', // TrainMaster
+        '1503297126585860187', // DVMP Command
     ],
 
     // Crew Voice Channels — set this to the category ID where Crew VCs should be created

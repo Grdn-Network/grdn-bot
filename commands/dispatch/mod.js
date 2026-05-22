@@ -7,7 +7,7 @@ const { SlashCommandBuilder } = require('discord.js');
 const db = require('../../database/db');
 const { buildDispatchEmbed } = require('../../utils/dispatchEmbed');
 const { hasAnyRole } = require('../../utils/permissions');
-const { ADMIN_ROLE, HOST_ROLE, DISPATCH_CHANNEL_ID } = require('../../config');
+const { ADMIN_ROLE, HOST_ROLE, DVMP_COMMAND_ROLE, DISPATCH_CHANNEL_ID } = require('../../config');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -95,7 +95,7 @@ module.exports = {
 
     // ── Execute ───────────────────────────────────────────────────
     async execute(interaction) {
-        if (!hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE])) {
+        if (!hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE, DVMP_COMMAND_ROLE])) {
             return interaction.reply({ content: '❌ Only admins and hosts can manage mods.', flags: 64 });
         }
 

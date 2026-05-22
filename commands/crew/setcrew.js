@@ -159,6 +159,13 @@ module.exports = {
             await updateTrainBoard(interaction.client, interaction.guild.id, TRAIN_BOARD_CHANNEL_ID)
                 .catch(err => console.error('[TrainBoard] Update failed:', err));
 
+            interaction.client.emit('userRegistered', {
+                user: targetUser ?? interaction.user,
+                type: type ?? null,
+                trainNumber: trainNumber ?? '',
+                preferredName,
+            });
+
             return interaction.editReply({ content: `✅ Profile created for <@${userIdToEdit}>.${ownerNote}` });
         }
 
@@ -211,6 +218,13 @@ module.exports = {
 
         await updateTrainBoard(interaction.client, interaction.guild.id, TRAIN_BOARD_CHANNEL_ID)
             .catch(err => console.error('[TrainBoard] Update failed:', err));
+
+        interaction.client.emit('userRegistered', {
+            user: targetUser ?? interaction.user,
+            type: newType,
+            trainNumber: newTrain ?? '',
+            preferredName: newPreferred,
+        });
 
         return interaction.editReply({ content: `✅ Profile updated and nickname synced for <@${userIdToEdit}>.${ownerNote}` });
     }

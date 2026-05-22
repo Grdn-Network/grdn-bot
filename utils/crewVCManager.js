@@ -1,6 +1,6 @@
 // utils/crewVCManager.js
 // Tracks crew voice channels and deletes them 5 minutes after they become empty.
-// Also exports deleteAllCrewVCs for use by /endop.
+// Also exports deleteAllCrewVCs for use by /ops end.
 const storage = require('../database/storage');
 
 const DELETE_DELAY_MS = 5 * 60 * 1000;

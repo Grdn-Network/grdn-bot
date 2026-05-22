@@ -1,6 +1,7 @@
 // commands/admin/say.js
 const { SlashCommandBuilder } = require('discord.js');
-const { ADMIN_ROLE } = require('../../config');
+const { hasAnyRole } = require('../../utils/permissions');
+const { ADMIN_ROLE, DVMP_COMMAND_ROLE } = require('../../config');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -18,7 +19,7 @@ module.exports = {
         ),
 
     async execute(interaction) {
-        if (!interaction.member.roles.cache.has(ADMIN_ROLE)) {
+        if (!hasAnyRole(interaction.member, [ADMIN_ROLE, DVMP_COMMAND_ROLE])) {
             return interaction.reply({
                 content: '❌ You do not have permission to use this command.',
                 flags: 64

@@ -2,7 +2,8 @@
 const { SlashCommandBuilder } = require('discord.js');
 const db = require('../../database/db');
 const { buildDispatchEmbed, deriveDvConnectUrl } = require('../../utils/dispatchEmbed');
-const { ADMIN_ROLE, HOST_ROLE, DISPATCH_CHANNEL_ID } = require('../../config');
+const { hasAnyRole } = require('../../utils/permissions');
+const { ADMIN_ROLE, HOST_ROLE, DVMP_COMMAND_ROLE, DISPATCH_CHANNEL_ID } = require('../../config');
 
 // Whitelist — maps choice value → DB column name and display label.
 // Column names are hardcoded here, never interpolated from user input.
@@ -40,7 +41,7 @@ module.exports = {
         ),
 
     async execute(interaction) {
-        if (!interaction.member.roles.cache.has(ADMIN_ROLE) && !interaction.member.roles.cache.has(HOST_ROLE)) {
+        if (!hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE, DVMP_COMMAND_ROLE])) {
             return interaction.reply({ content: '❌ Only admins and hosts can edit the embed.', flags: 64 });
         }
 

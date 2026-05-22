@@ -1,6 +1,7 @@
 // commands/admin/clear.js
 const { SlashCommandBuilder } = require('discord.js');
 const db = require('../../database/db');
+const { hasAnyRole } = require('../../utils/permissions');
 const { ADMIN_ROLE, DISPATCH_CHANNEL_ID } = require('../../config');
 
 module.exports = {
@@ -9,8 +10,8 @@ module.exports = {
         .setDescription('Clears all messages in the dispatch channel except pinned and the permanent embed.'),
 
     async execute(interaction) {
-        if (!interaction.member.roles.cache.has(ADMIN_ROLE)) {
-            return interaction.reply({ content: '❌ No permission.', flags: 64 });
+        if (!hasAnyRole(interaction.member, ADMIN_ROLE)) {
+            return interaction.reply({ content: '❌ You do not have permission to use this command.', flags: 64 });
         }
 
         const channel = interaction.guild.channels.cache.get(DISPATCH_CHANNEL_ID);

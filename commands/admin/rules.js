@@ -1,4 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { hasAnyRole } = require('../../utils/permissions');
+const { ADMIN_ROLE, HOST_ROLE } = require('../../config');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -6,6 +8,13 @@ module.exports = {
         .setDescription('Post the GRDN Ops rules using a webhook embed'),
 
     async execute(interaction) {
+        if (!hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE])) {
+            return interaction.reply({
+                content: '❌ Only admins and hosts can post the rules.',
+                flags: 64,
+            });
+        }
+
         const channel = interaction.channel;
 
         // Create webhook

@@ -2,7 +2,8 @@
 const { SlashCommandBuilder } = require('discord.js');
 const db = require('../../database/db');
 const { buildDispatchEmbed, buildDispatchComponents } = require('../../utils/dispatchEmbed');
-const { ADMIN_ROLE, HOST_ROLE, DISPATCH_CHANNEL_ID } = require('../../config');
+const { hasAnyRole } = require('../../utils/permissions');
+const { ADMIN_ROLE, HOST_ROLE, DVMP_COMMAND_ROLE, DISPATCH_CHANNEL_ID } = require('../../config');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -10,7 +11,7 @@ module.exports = {
         .setDescription('Post or restore the Operations embed.'),
 
     async execute(interaction) {
-        if (!interaction.member.roles.cache.has(ADMIN_ROLE) && !interaction.member.roles.cache.has(HOST_ROLE)) {
+        if (!hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE, DVMP_COMMAND_ROLE])) {
             return interaction.reply({ content: '❌ Only admins and hosts can post the embed.', flags: 64 });
         }
 

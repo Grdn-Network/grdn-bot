@@ -342,6 +342,19 @@ function closeSession(guildId, endedBy, endedAt) {
 }
 
 /**
+ * Returns the number of distinct ops sessions a user has hours logged in.
+ * Used by /profile to show "Ops Attended".
+ */
+function getOpsAttended(userId) {
+    const row = db.prepare(`
+        SELECT COUNT(DISTINCT session_id) AS count
+        FROM ops_log
+        WHERE user_id = ? AND session_id IS NOT NULL
+    `).get(userId);
+    return row?.count ?? 0;
+}
+
+/**
  * Returns total minutes by category for a user, including any currently open entry.
  * Shape: { road_crew, dispatch, shunting, yardmaster, bonus }
  */
@@ -477,6 +490,7 @@ module.exports = {
     isInSessionCrew,
     getSessionCrew,
     clearTrainNumber,
+    getOpsAttended,
     addCrewVC,
     removeCrewVC,
     getCrewVCs,
