@@ -9,21 +9,25 @@ const storage = require('../database/storage');
 
 const LOCO_FETCH_TIMEOUT_MS = 2000;
 
-// ==== MONOSPACED TABLE ====
+// ==== LINE FORMATTER ====
 
-function pad(str, len) {
-  str = String(str ?? '');
-  return str.length >= len ? str : str + ' '.repeat(len - str.length);
-}
+// Builds a single train board line:
+//   <loco> | Harbor → Steel Mill (A2) | HB-SU-27
+// loco is already markdown-formatted (bold or italic) by the caller.
+function formatLine(loco, dep, des, trk, job) {
+  const d  = v => v && v !== '—' ? v : null;
+  const depStr = d(dep);
+  const desStr = d(des);
+  const trkStr = d(trk);
+  const jobStr = d(job) ?? '—';
 
-function buildMonospacedTable(rows) {
-  if (!rows.length) return '';
-  const widths = rows[0].map((_, i) =>
-    Math.max(...rows.map(r => String(r[i] ?? '').length))
-  );
-  return rows
-    .map(row => row.map((cell, i) => pad(cell ?? '', widths[i])).join(' | '))
-    .join('\n');
+  let route = '—';
+  if (depStr && desStr) route = `${depStr} → ${desStr}`;
+  else if (desStr)      route = `→ ${desStr}`;
+  else if (depStr)      route = depStr;
+  if (trkStr) route += ` (${trkStr})`;
+
+  return `${loco} | ${route} | ${jobStr}`;
 }
 
 // ==== LIVE LOCO DATA ====
@@ -215,60 +219,43 @@ async function updateTrainBoard(client, guildId, channelId) {
   for (const [type, list] of byType) {
     descriptionParts.push(`**${type}**`);
 
-    const rows = [['#', 'DEP', 'DES', 'TRK', 'JOB', 'RMK']];
+    const lines = [];
 
     for (const c of list) {
       const liveData = findLoco(locoMap, c.trainNumber, c.locoType);
 
-      // Build the display ID for the # column.
-      // Live data: use game locoId + game locoType to format (e.g. "DE2-034")
-      // No live data: use profile loco_type + train number, or bare number
       const displayId = liveData
-        ? formatLocoId(liveData.locoId, liveData.locoType)        // e.g. "DE2-034"
+        ? formatLocoId(liveData.locoId, liveData.locoType)
         : c.locoType
-          ? `${c.locoType}-${c.trainNumber}`                       // e.g. "DE2-001" from profile
-          : c.trainNumber;                                         // e.g. "001"
+          ? `${c.locoType}-${c.trainNumber}`
+          : c.trainNumber;
 
-      // Manual /assign takes priority over live data.
-      // If all fields are '—' (or no entry exists), hand back to GRDNConnect.
-      const assign   = storage.getAssignmentByTrain(guildId, c.trainNumber);
+      // Manual /assign takes priority. If all fields are '—', hand back to GRDNConnect.
+      const assign    = storage.getAssignmentByTrain(guildId, c.trainNumber);
       const hasManual = assign && [assign.dep, assign.des, assign.trk, assign.job, assign.rmk]
         .some(v => v && v !== '—');
 
       if (hasManual) {
-        // Manual override — show exactly what /assign saved
-        rows.push([
-          displayId,
-          assign.dep || '—',
-          assign.des || '—',
-          assign.trk || '—',
-          assign.job || '—',
-          assign.rmk || '—',
-        ]);
+        // Manual — bold loco ID
+        lines.push(formatLine(`**${displayId}**`,
+          assign.dep, assign.des, assign.trk, assign.job));
+
       } else if (liveData && liveData.jobs && liveData.jobs.length > 0) {
-        // No manual override — use live GRDNConnect data
-        for (let i = 0; i < liveData.jobs.length; i++) {
-          const j = liveData.jobs[i];
-          // Prefix ! when job is not yet accepted so crew can see it's unassigned
+        // Live — italic loco ID, one line per job
+        for (const j of liveData.jobs) {
           const jobDisplay = j.state === 'InProgress'
             ? (j.jobId ?? '—')
             : `!${j.jobId ?? '—'}`;
-          rows.push([
-            i === 0 ? displayId : '',
-            j.departure   ?? '—',
-            j.destination ?? '—',
-            j.track       ?? '—',
-            jobDisplay,
-            j.cargo       ?? '—',
-          ]);
+          lines.push(formatLine(`*${displayId}*`,
+            j.departure, j.destination, j.track, jobDisplay));
         }
       } else {
-        // Neither manual nor live data
-        rows.push([displayId, 'XXX', 'XXX', 'XXX', 'XXX', 'XXX']);
+        // No data at all
+        lines.push(`*${displayId}* | — | —`);
       }
     }
 
-    descriptionParts.push('```text\n' + buildMonospacedTable(rows) + '\n```');
+    descriptionParts.push(lines.join('\n'));
   }
 
   if (descriptionParts.length === 0) {
