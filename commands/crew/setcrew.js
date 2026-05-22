@@ -151,6 +151,17 @@ module.exports = {
                 await guildMember.setNickname(targetNick).catch(() => {});
                 const inVC = !!guildMember.voice.channel;
                 enrollIfSessionActive(userIdToEdit, interaction.guild.id, type, trainNumber, inVC);
+
+                // If the user is in a Crew VC, refresh the channel name with their new train number
+                if (inVC && trainNumber) {
+                    const vc = storage.getCrewVCByChannel(guildMember.voice.channel.id);
+                    if (vc) {
+                        await guildMember.voice.channel
+                            .setName(`(${trainNumber}) | Crew ${vc.crew_number}`)
+                            .catch(() => {});
+                    }
+                }
+
                 if (guildMember.id === interaction.guild.ownerId && userIdToEdit === interaction.user.id) {
                     ownerNote = `\n⚠️ Discord doesn't allow bots to rename the server owner. Set your nickname manually: \`${targetNick}\``;
                 }
@@ -211,6 +222,17 @@ module.exports = {
             await guildMember.setNickname(targetNick).catch(() => {});
             const inVC = !!guildMember.voice.channel;
             enrollIfSessionActive(userIdToEdit, interaction.guild.id, newType, newTrain, inVC);
+
+            // If the user is in a Crew VC, refresh the channel name with their new train number
+            if (inVC && newTrain) {
+                const vc = storage.getCrewVCByChannel(guildMember.voice.channel.id);
+                if (vc) {
+                    await guildMember.voice.channel
+                        .setName(`(${newTrain}) | Crew ${vc.crew_number}`)
+                        .catch(() => {});
+                }
+            }
+
             if (guildMember.id === interaction.guild.ownerId) {
                 ownerNote = `\n⚠️ Discord doesn't allow bots to rename the server owner. Set your nickname manually: \`${targetNick}\``;
             }
