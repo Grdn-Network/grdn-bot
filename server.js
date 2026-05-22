@@ -72,43 +72,46 @@ module.exports = function startServer(client) {
     });
 
     // ── POST /defect-alert ────────────────────────────────────────────────────
-    // Body: { trainNumber: string, defectType: string, location?: string }
+    // Body: { trainNumber, defectType, message, detail? }
     //
-    // GRDNConnect calls this when it detects a hotbox or other defect.
-    // The bot joins the crew's VC and plays an audio alert — but only if
-    // the crew member has opted in via /defect (default: off).
+    // GRDNConnect sends a pre-formatted CSX MicroHBD-style message.
+    // Bot joins the VC of opted-in crew and plays it via TTS.
     app.post('/defect-alert', async (req, res) => {
-        const { trainNumber, defectType, location } = req.body ?? {};
-        if (!trainNumber || !defectType) {
-            return res.status(400).json({ error: 'Missing trainNumber or defectType' });
+        const { trainNumber, defectType, message } = req.body ?? {};
+        if (!trainNumber || !defectType || !message) {
+            return res.status(400).json({ error: 'Missing trainNumber, defectType, or message' });
         }
         res.json({ ok: true });
-
-        const message = location
-            ? `Attention train ${trainNumber} — ${defectType} detected at ${location}. Reduce speed and inspect.`
-            : `Attention train ${trainNumber} — ${defectType} detected. Reduce speed and inspect.`;
 
         try {
             for (const [, guild] of client.guilds.cache) {
                 const crew = storage.getAllCrew(guild.id)
                     .filter(c => String(c.trainNumber) === String(trainNumber));
 
+                // Special case: consist checks fire even without a matching crew entry
+                // (they're informational, not safety-critical)
+                const isConsistCheck = defectType === 'Consist Check';
+
                 for (const c of crew) {
-                    // Check opt-in preference
                     const pref = db.prepare(
                         `SELECT enabled FROM defect_prefs WHERE user_id = ?`
                     ).get(c.userId);
-                    if (!pref?.enabled) continue;
+
+                    // Defect alerts: opt-in required. Consist checks: always skip if opted out.
+                    if (!pref?.enabled && !isConsistCheck) continue;
+                    if (!pref?.enabled && isConsistCheck) continue; // consist checks respect opt-in too
 
                     const member = await guild.members.fetch(c.userId).catch(() => null);
                     if (!member?.voice?.channel) continue;
 
-                    console.log(`[Defect] Alerting ${c.userId} (train ${trainNumber}): ${defectType}`);
+                    console.log(`[Defect] ${defectType} → ${c.userId} (train ${trainNumber})`);
 
                     if (alertTrain) {
+                        // Pass the pre-formatted message directly
                         alertTrain(guild, trainNumber, message).catch(err =>
                             console.error('[Defect] Voice alert failed:', err.message)
                         );
+                        break; // one voice alert per train per event (avoid double-joining)
                     }
                 }
             }
@@ -130,11 +133,19 @@ module.exports = function startServer(client) {
         }
 
         try {
-            // Update in DB — train_number is not guild-scoped in this bot
+            // LIMIT 1 via rowid subquery — for multi-crew trains, only the
+            // most recently registered person is moved. The other crew member
+            // stays on the original train. This avoids clobbering both registrations
+            // when one of a two-person crew switches locos mid-op.
             const result = db.prepare(`
                 UPDATE registrations
                 SET train_number = ?
-                WHERE train_number = ? AND active = 1
+                WHERE rowid IN (
+                    SELECT rowid FROM registrations
+                    WHERE train_number = ? AND active = 1
+                    ORDER BY rowid DESC
+                    LIMIT 1
+                )
             `).run(toTrainNumber, fromTrainNumber);
 
             if (result.changes === 0) {
