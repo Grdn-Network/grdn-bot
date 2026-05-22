@@ -15,6 +15,17 @@ module.exports = (client) => {
         }
     }
 
+    // Load modal handlers from modals/ directory
+    const modalHandlers = [];
+    const modalsPath = path.join(__dirname, 'modals');
+    if (fs.existsSync(modalsPath)) {
+        for (const file of fs.readdirSync(modalsPath).filter(f => f.endsWith('.js'))) {
+            const handler = require(`./modals/${file}`);
+            modalHandlers.push(handler);
+            console.log(`[MODALS] Loaded ${file}`);
+        }
+    }
+
     // Safe reply helper — works whether interaction is fresh, deferred, or already replied.
     async function safeReply(interaction, payload) {
         try {
@@ -62,6 +73,25 @@ module.exports = (client) => {
                     content: '❌ An error occurred while executing this command.',
                     flags: 64
                 });
+            }
+            return;
+        }
+
+        // -----------------------------
+        // MODAL SUBMIT HANDLER
+        // -----------------------------
+        if (interaction.isModalSubmit()) {
+            const handler = modalHandlers.find(h =>
+                h.customId
+                    ? h.customId === interaction.customId
+                    : h.matches?.(interaction.customId)
+            );
+            if (!handler) return;
+            try {
+                await handler.execute(interaction);
+            } catch (err) {
+                console.error('[Modal Error]', interaction.customId, err);
+                await safeReply(interaction, { content: '❌ An error occurred.', flags: 64 });
             }
             return;
         }
