@@ -229,35 +229,42 @@ async function updateTrainBoard(client, guildId, channelId) {
           ? `${c.locoType}-${c.trainNumber}`                       // e.g. "DE2-001" from profile
           : c.trainNumber;                                         // e.g. "001"
 
-      if (liveData && liveData.jobs && liveData.jobs.length > 0) {
-        // Live game data — one row per job on this loco
+      // Manual /assign takes priority over live data.
+      // If all fields are '—' (or no entry exists), hand back to GRDNConnect.
+      const assign   = storage.getAssignmentByTrain(guildId, c.trainNumber);
+      const hasManual = assign && [assign.dep, assign.des, assign.trk, assign.job, assign.rmk]
+        .some(v => v && v !== '—');
+
+      if (hasManual) {
+        // Manual override — show exactly what /assign saved
+        rows.push([
+          displayId,
+          assign.dep || '—',
+          assign.des || '—',
+          assign.trk || '—',
+          assign.job || '—',
+          assign.rmk || '—',
+        ]);
+      } else if (liveData && liveData.jobs && liveData.jobs.length > 0) {
+        // No manual override — use live GRDNConnect data
         for (let i = 0; i < liveData.jobs.length; i++) {
           const j = liveData.jobs[i];
-          // Prefix ! when job is not yet accepted (Available) so crew can see
-          // it's unassigned — still listed so staging/shunting flows aren't lost
+          // Prefix ! when job is not yet accepted so crew can see it's unassigned
           const jobDisplay = j.state === 'InProgress'
             ? (j.jobId ?? '—')
             : `!${j.jobId ?? '—'}`;
           rows.push([
-            i === 0 ? displayId : '',   // loco ID only on the first row
+            i === 0 ? displayId : '',
             j.departure   ?? '—',
             j.destination ?? '—',
-            j.track       ?? '—',       // live destination track from game
+            j.track       ?? '—',
             jobDisplay,
-            j.cargo       ?? '—'        // cargo type in RMK column
+            j.cargo       ?? '—',
           ]);
         }
       } else {
-        // No live data — fall back to manual /assign entry
-        const assign = storage.getAssignmentByTrain(guildId, c.trainNumber);
-        rows.push([
-          displayId,
-          assign?.dep || 'XXX',
-          assign?.des || 'XXX',
-          assign?.trk || 'XXX',
-          assign?.job || 'XXX',
-          assign?.rmk || 'XXX'
-        ]);
+        // Neither manual nor live data
+        rows.push([displayId, 'XXX', 'XXX', 'XXX', 'XXX', 'XXX']);
       }
     }
 
