@@ -39,10 +39,43 @@ module.exports = (client) => {
         }
     }
 
+    // Find a handler by customId, optionally requiring supportsDM
+    function findHandler(handlers, customId, requireDM = false) {
+        return handlers.find(h => {
+            const idMatch = h.customId ? h.customId === customId : h.matches?.(customId);
+            return idMatch && (!requireDM || h.supportsDM);
+        });
+    }
+
     client.on('interactionCreate', async interaction => {
 
-        // Ignore DMs — all features are guild-only
-        if (!interaction.guild) return;
+        // ── DM interactions ───────────────────────────────────────────────────
+        // Most features are guild-only, but handlers can opt in to DM support
+        // by setting supportsDM: true.
+        if (!interaction.guild) {
+            if (interaction.isButton()) {
+                const handler = findHandler(buttonHandlers, interaction.customId, true);
+                if (!handler) return;
+                try {
+                    await handler.execute(interaction);
+                } catch (err) {
+                    console.error('[Button DM Error]', interaction.customId, err);
+                    await safeReply(interaction, { content: '❌ An error occurred.', flags: 64 });
+                }
+            } else if (interaction.isModalSubmit()) {
+                const handler = findHandler(modalHandlers, interaction.customId, true);
+                if (!handler) return;
+                try {
+                    await handler.execute(interaction);
+                } catch (err) {
+                    console.error('[Modal DM Error]', interaction.customId, err);
+                    await safeReply(interaction, { content: '❌ An error occurred.', flags: 64 });
+                }
+            }
+            return;
+        }
+
+        // ── Guild interactions ────────────────────────────────────────────────
 
         // -----------------------------
         // AUTOCOMPLETE HANDLER
@@ -81,11 +114,7 @@ module.exports = (client) => {
         // MODAL SUBMIT HANDLER
         // -----------------------------
         if (interaction.isModalSubmit()) {
-            const handler = modalHandlers.find(h =>
-                h.customId
-                    ? h.customId === interaction.customId
-                    : h.matches?.(interaction.customId)
-            );
+            const handler = findHandler(modalHandlers, interaction.customId);
             if (!handler) return;
             try {
                 await handler.execute(interaction);
@@ -101,12 +130,7 @@ module.exports = (client) => {
         // -----------------------------
         if (!interaction.isButton()) return;
 
-        const handler = buttonHandlers.find(h =>
-            h.customId
-                ? h.customId === interaction.customId
-                : h.matches?.(interaction.customId)
-        );
-
+        const handler = findHandler(buttonHandlers, interaction.customId);
         if (!handler) return;
 
         try {

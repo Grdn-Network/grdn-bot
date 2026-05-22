@@ -1,4 +1,4 @@
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const config = require('../config/logging.json');
 const { sendLog } = require('./logHelper');
 const storage = require('../database/storage');
@@ -39,6 +39,22 @@ module.exports = (client) => {
             .setTimestamp();
 
         sendLog(client, config.logChannel, embed);
+
+        // Send feedback DM — fire and forget, DMs may be closed
+        member.user.send({
+            content:
+                `Hey ${member.user.username} — sorry to see you go from **GRDN Network**.\n\n` +
+                `If you have a moment, we'd love to know why you left. ` +
+                `Your feedback helps us improve for everyone — no pressure though.`,
+            components: [
+                new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`feedback_btn:${member.guild.id}:${member.id}`)
+                        .setLabel('Share Feedback')
+                        .setStyle(ButtonStyle.Secondary)
+                )
+            ],
+        }).catch(() => {}); // Silently ignore if DMs are closed
 
         // Clean up crew data so they don't linger on the train board
         try {
