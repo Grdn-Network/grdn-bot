@@ -1,8 +1,12 @@
 // commands/dispatch/mod.js
-// Unified mod management command.
-//   /mod add    name: [url:] [version:] [note:]   — add or fully update a mod
-//   /mod edit   name: [url:] [version:] [note:]   — surgically update specific fields (name autocompletes)
-//   /mod remove name:                              — delete a mod (name autocompletes)
+// /mod action:[add|edit|remove] name: [version:] [url:] [note:]
+//
+//   add    — add a new mod (or fully update an existing one)
+//   edit   — surgically update specific fields (leave others untouched)
+//   remove — delete a mod from the list
+//
+// name autocompletes from existing mods for all three actions.
+
 const { SlashCommandBuilder } = require('discord.js');
 const db = require('../../database/db');
 const { buildDispatchEmbed } = require('../../utils/dispatchEmbed');
@@ -13,77 +17,40 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('mod')
         .setDescription('Manage the Required Mods section of the Operations embed.')
-
-        // ── /mod add ──────────────────────────────────────────────
-        .addSubcommand(sub => sub
-            .setName('add')
-            .setDescription('Add a new mod (or fully update an existing one).')
-            .addStringOption(o => o
-                .setName('name')
-                .setDescription('Mod name as it will appear in the embed (e.g. Derail Valley Multiplayer)')
-                .setRequired(true)
-            )
-            .addStringOption(o => o
-                .setName('version')
-                .setDescription('Version number (e.g. 0.14.2) — shown as "v0.14.2" in the embed')
-                .setRequired(false)
-            )
-            .addStringOption(o => o
-                .setName('url')
-                .setDescription('Download / info link — must start with http:// or https://')
-                .setRequired(false)
-            )
-            .addStringOption(o => o
-                .setName('note')
-                .setDescription('Short note shown after the link (e.g. "Required for hosts only")')
-                .setRequired(false)
+        .addStringOption(o => o
+            .setName('action')
+            .setDescription('What to do')
+            .setRequired(true)
+            .addChoices(
+                { name: 'Add — add or fully update a mod',        value: 'add'    },
+                { name: 'Edit — update specific fields of a mod', value: 'edit'   },
+                { name: 'Remove — delete a mod from the list',    value: 'remove' },
             )
         )
-
-        // ── /mod edit ─────────────────────────────────────────────
-        .addSubcommand(sub => sub
-            .setName('edit')
-            .setDescription('Edit specific fields of an existing mod without touching the others.')
-            .addStringOption(o => o
-                .setName('name')
-                .setDescription('Mod to edit')
-                .setRequired(true)
-                .setAutocomplete(true)
-            )
-            .addStringOption(o => o
-                .setName('version')
-                .setDescription('New version number — use "clear" to remove it')
-                .setRequired(false)
-            )
-            .addStringOption(o => o
-                .setName('url')
-                .setDescription('New URL — use "clear" to remove it')
-                .setRequired(false)
-            )
-            .addStringOption(o => o
-                .setName('note')
-                .setDescription('New note — use "clear" to remove it')
-                .setRequired(false)
-            )
+        .addStringOption(o => o
+            .setName('name')
+            .setDescription('Mod name (autocompletes existing mods)')
+            .setRequired(true)
+            .setAutocomplete(true)
         )
-
-        // ── /mod remove ───────────────────────────────────────────
-        .addSubcommand(sub => sub
-            .setName('remove')
-            .setDescription('Remove a mod from the list.')
-            .addStringOption(o => o
-                .setName('name')
-                .setDescription('Mod to remove')
-                .setRequired(true)
-                .setAutocomplete(true)
-            )
+        .addStringOption(o => o
+            .setName('version')
+            .setDescription('Version number (e.g. 0.14.2) — shown as "v0.14.2". Use "clear" to remove.')
+            .setRequired(false)
+        )
+        .addStringOption(o => o
+            .setName('url')
+            .setDescription('Download / info link (must start with http:// or https://). Use "clear" to remove.')
+            .setRequired(false)
+        )
+        .addStringOption(o => o
+            .setName('note')
+            .setDescription('Short note shown after the link. Use "clear" to remove.')
+            .setRequired(false)
         ),
 
-    // ── Autocomplete ─────────────────────────────────────────────
+    // ── Autocomplete ──────────────────────────────────────────────────────────
     async autocomplete(interaction) {
-        const sub = interaction.options.getSubcommand();
-        if (sub !== 'edit' && sub !== 'remove') return;
-
         const focused = interaction.options.getFocused().toLowerCase();
         const mods = db.prepare(`SELECT name FROM mods ORDER BY sort_order, id`).all();
         const choices = mods
@@ -93,21 +60,21 @@ module.exports = {
         await interaction.respond(choices);
     },
 
-    // ── Execute ───────────────────────────────────────────────────
+    // ── Execute ───────────────────────────────────────────────────────────────
     async execute(interaction) {
         if (!hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE, DVMP_COMMAND_ROLE])) {
             return interaction.reply({ content: '❌ Only admins and hosts can manage mods.', flags: 64 });
         }
 
-        const sub = interaction.options.getSubcommand();
-
-        if (sub === 'add')    return handleAdd(interaction);
-        if (sub === 'edit')   return handleEdit(interaction);
-        if (sub === 'remove') return handleRemove(interaction);
-    }
+        const action = interaction.options.getString('action');
+        if (action === 'add')    return handleAdd(interaction);
+        if (action === 'edit')   return handleEdit(interaction);
+        if (action === 'remove') return handleRemove(interaction);
+    },
 };
 
-// ── /mod add ──────────────────────────────────────────────────────
+// ── add ───────────────────────────────────────────────────────────────────────
+
 async function handleAdd(interaction) {
     const name    = interaction.options.getString('name').trim();
     const url     = interaction.options.getString('url')?.trim()     || null;
@@ -131,25 +98,26 @@ async function handleAdd(interaction) {
 
     await rebuildEmbed(interaction);
     return interaction.reply({
-        content: modListReply(existing ? `Updated` : `Added`, name),
-        flags: 64
+        content: modListReply(existing ? 'Updated' : 'Added', name),
+        flags: 64,
     });
 }
 
-// ── /mod edit ─────────────────────────────────────────────────────
+// ── edit ──────────────────────────────────────────────────────────────────────
+
 async function handleEdit(interaction) {
-    const name = interaction.options.getString('name').trim();
+    const name     = interaction.options.getString('name').trim();
     const existing = db.prepare(`SELECT * FROM mods WHERE name = ? COLLATE NOCASE`).get(name);
 
     if (!existing) {
         return interaction.reply({
             content: `❌ No mod named **${name}** found. Use autocomplete or check the spelling.`,
-            flags: 64
+            flags: 64,
         });
     }
 
     // Only update fields that were explicitly provided; leave others untouched.
-    // Passing "clear" as the value removes the field.
+    // Passing "clear" removes the field.
     const rawUrl     = interaction.options.getString('url');
     const rawVersion = interaction.options.getString('version');
     const rawNote    = interaction.options.getString('note');
@@ -167,20 +135,21 @@ async function handleEdit(interaction) {
 
     await rebuildEmbed(interaction);
     return interaction.reply({
-        content: modListReply(`Edited`, existing.name),
-        flags: 64
+        content: modListReply('Edited', existing.name),
+        flags: 64,
     });
 }
 
-// ── /mod remove ───────────────────────────────────────────────────
+// ── remove ────────────────────────────────────────────────────────────────────
+
 async function handleRemove(interaction) {
-    const name = interaction.options.getString('name').trim();
+    const name     = interaction.options.getString('name').trim();
     const existing = db.prepare(`SELECT id FROM mods WHERE name = ? COLLATE NOCASE`).get(name);
 
     if (!existing) {
         return interaction.reply({
             content: `❌ No mod named **${name}** found. Use autocomplete or check the spelling.`,
-            flags: 64
+            flags: 64,
         });
     }
 
@@ -188,14 +157,13 @@ async function handleRemove(interaction) {
 
     await rebuildEmbed(interaction);
     return interaction.reply({
-        content: modListReply(`Removed`, name),
-        flags: 64
+        content: modListReply('Removed', name),
+        flags: 64,
     });
 }
 
-// ── Helpers ───────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Rebuild the live dispatch embed in the ops channel. */
 async function rebuildEmbed(interaction) {
     try {
         const embedRow = db.prepare(`SELECT message_id FROM dispatch_embed WHERE id = 1`).get();
@@ -209,7 +177,6 @@ async function rebuildEmbed(interaction) {
     }
 }
 
-/** Returns a formatted ephemeral reply showing the action taken + current mod list. */
 function modListReply(action, name) {
     const allMods = db.prepare(
         `SELECT name, url, version, note FROM mods ORDER BY sort_order, id`
