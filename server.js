@@ -77,7 +77,7 @@ module.exports = function startServer(client) {
     // GRDNConnect sends a pre-formatted CSX MicroHBD-style message.
     // Bot joins the VC of opted-in crew and plays it via TTS.
     app.post('/defect-alert', async (req, res) => {
-        const { trainNumber, defectType, message } = req.body ?? {};
+        const { trainNumber, defectType, message, detail } = req.body ?? {};
         if (!trainNumber || !defectType || !message) {
             return res.status(400).json({ error: 'Missing trainNumber, defectType, or message' });
         }
@@ -107,8 +107,8 @@ module.exports = function startServer(client) {
                     console.log(`[Defect] ${defectType} → ${c.userId} (train ${trainNumber})`);
 
                     if (alertTrain) {
-                        // Pass the pre-formatted message directly
-                        alertTrain(guild, trainNumber, message).catch(err =>
+                        // Pass structured fields — voiceAlert builds the clip sequence
+                        alertTrain(guild, trainNumber, defectType, detail ?? null).catch(err =>
                             console.error('[Defect] Voice alert failed:', err.message)
                         );
                         break; // one voice alert per train per event (avoid double-joining)

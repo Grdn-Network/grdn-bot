@@ -58,13 +58,9 @@ module.exports = {
             content: `📻 ${mentions} — **Train ${train}**, contact dispatch.`,
         });
 
-        // ── 2. Voice alert — join their VC and play TTS (fire and forget) ─────
+        // ── 2. Voice alert — join their VC and play stitched clip (fire and forget) ──
         if (alertTrain) {
-            alertTrain(
-                interaction.guild,
-                train,
-                `Train ${train}, contact dispatch`
-            ).catch(err => {
+            alertTrain(interaction.guild, train, 'call').catch(err => {
                 console.error('[call] Voice alert failed:', err.message);
             });
         }

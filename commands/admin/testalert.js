@@ -1,48 +1,52 @@
 // commands/admin/testalert.js
-// /testalert [type] [engine] — staff command to audition TTS voices.
+// /testalert [type] — staff command to audition the clip stitcher.
 //
-// Run this while sitting in a voice channel. The bot joins, plays the sample,
-// then leaves. Run it several times with engine:random to hear the 70/30 mix.
+// Join a voice channel, then run this. The bot joins, plays the stitched
+// alert for the selected defect type using train "034" as a sample, then leaves.
 //
-// QUICK SETUP CHECKLIST
-// ──────────────────────
-//  espeak-ng (free, recommended):
-//    VPS: apt install espeak-ng
-//    Test: VOICE_ENGINE=espeak node -e "require('./utils/voiceAlert').alertChannel(...)"
+// REPLACING PLACEHOLDER CLIPS
+// ────────────────────────────
+// Clips live in audio/clips/. Drop in new .wav files with the same names
+// and the next /testalert immediately uses them — no restart needed.
 //
-//  gtts (already installed):
-//    VPS: npm install gtts          ← probably already done
-//    Test: VOICE_ENGINE=gtts  ...
-//
-//  Amazon Polly:
-//    VPS: npm install @aws-sdk/client-polly
-//    .env: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
-//
-//  OpenAI TTS:
-//    VPS: npm install openai
-//    .env: OPENAI_API_KEY
+// ADDING YOUR OWN RECORDINGS
+// ────────────────────────────
+// Record each phrase as a separate WAV, name it to match the clip inventory
+// in utils/voiceAlert.js, and drop it in audio/clips/.
 
 const { SlashCommandBuilder } = require('discord.js');
 const { hasAnyRole } = require('../../utils/permissions');
 const { STAFF_ROLES } = require('../../config');
+const path = require('path');
+const fs   = require('fs');
 
-// Sample messages for each defect type — same format as real DefectMonitor output
-const SAMPLES = {
-    hotbox:       'Attention. Train, zero three four. G R D N detector. Hot box detected. Rear truck. Reduce speed and inspect. End of message.',
-    derailment:   'Emergency. Train, zero three four. G R D N detector. Derailment detected. Stop immediately and contact dispatch. End of message.',
-    airhose:      'Attention. Train, zero three four. G R D N detector. Air hose defect. Check brake line and reduce speed. End of message.',
-    dragging:     'Attention. Train, zero three four. G R D N detector. Dragging equipment. Stop train and inspect consist. End of message.',
-    consistcheck: 'Train, zero three four. G R D N detector. No defects detected. Twenty four cars. Speed, forty five. End of message.',
-    call:         'Train zero three four, contact dispatch.',
+// Sample detail values for each defect type
+const SAMPLE_DETAIL = {
+    hotbox:       'rear truck',
+    derailment:   null,
+    airhose:      null,
+    dragging:     null,
+    consistcheck: '24 45',   // "24 cars, speed 45"
+    call:         null,
+};
+
+// Map /testalert type names to voiceAlert defect type strings
+const TYPE_MAP = {
+    hotbox:       'Hot Box',
+    derailment:   'Derailment',
+    airhose:      'Air Hose Defect',
+    dragging:     'Dragging Equipment',
+    consistcheck: 'Consist Check',
+    call:         'call',
 };
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('testalert')
-        .setDescription('Audition TTS voice engines — join a VC first, then run this.')
+        .setDescription('Audition the defect detector clip stitcher — join a VC first.')
         .addStringOption(o => o
             .setName('type')
-            .setDescription('Which sample to play (default: hotbox)')
+            .setDescription('Which alert to play (default: hotbox)')
             .setRequired(false)
             .addChoices(
                 { name: 'Hot Box',        value: 'hotbox'       },
@@ -51,18 +55,6 @@ module.exports = {
                 { name: 'Dragging Equip', value: 'dragging'     },
                 { name: 'Consist Check',  value: 'consistcheck' },
                 { name: '/call style',    value: 'call'         },
-            )
-        )
-        .addStringOption(o => o
-            .setName('engine')
-            .setDescription('Pin a specific TTS engine (default: random weighted)')
-            .setRequired(false)
-            .addChoices(
-                { name: 'Random (70% espeak / 30% gtts)',        value: 'random'  },
-                { name: 'espeak-ng — robotic, defect-detector',  value: 'espeak'  },
-                { name: 'gtts — Google TTS, natural voice',      value: 'gtts'    },
-                { name: 'polly — Amazon Polly Standard',         value: 'polly'   },
-                { name: 'openai — OpenAI TTS (onyx voice)',      value: 'openai'  },
             )
         ),
 
@@ -79,9 +71,9 @@ module.exports = {
             });
         }
 
-        const type   = interaction.options.getString('type')   ?? 'hotbox';
-        const engine = interaction.options.getString('engine') ?? 'random';
-        const text   = SAMPLES[type];
+        const type       = interaction.options.getString('type') ?? 'hotbox';
+        const defectType = TYPE_MAP[type];
+        const detail     = SAMPLE_DETAIL[type];
 
         await interaction.deferReply({ flags: 64 });
 
@@ -94,30 +86,35 @@ module.exports = {
             );
         }
 
-        // Resolve engine object (or null for random)
-        let engineOverride = null;
-        if (engine !== 'random') {
-            engineOverride = voiceAlert.VOICE_WEIGHTS.find(e => e.name === engine);
-            if (!engineOverride) {
-                // Engine listed in choices but not in VOICE_WEIGHTS (e.g. polly/openai not yet configured)
-                engineOverride = { name: engine, weight: 0, options: {} };
-            }
+        // Show which clips will be stitched
+        let clips;
+        try {
+            clips = voiceAlert.buildClipSequence('034', defectType, detail);
+        } catch (err) {
+            return interaction.editReply(`❌ ${err.message}`);
+        }
+
+        // Check for any missing clips up front and report clearly
+        const clipsDir = voiceAlert.CLIPS_DIR;
+        const missing  = clips.filter(n => !fs.existsSync(path.join(clipsDir, `${n}.wav`)));
+        if (missing.length > 0) {
+            return interaction.editReply(
+                `❌ Missing clip files:\n\`\`\`${missing.map(n => n + '.wav').join('\n')}\`\`\`\n` +
+                `Drop them into \`audio/clips/\` and try again.`
+            );
         }
 
         try {
-            await voiceAlert.playInChannel(voiceChannel, text, engineOverride);
-            const engineUsed = engineOverride?.name ?? 'random';
+            await voiceAlert.playInChannel(voiceChannel, clips);
             return interaction.editReply(
-                `✅ Played **${type}** sample via **${engineUsed}**.\n` +
-                `> *${text}*\n\n` +
-                `Run again with a different \`engine:\` to compare. ` +
-                `Set \`VOICE_ENGINE=espeak\` in \`.env\` to pin an engine for all alerts.`
+                `✅ Played **${type}** alert.\n` +
+                `Clips stitched: \`${clips.join(' → ')}\`\n\n` +
+                `To use real recordings, drop \`.wav\` files into \`audio/clips/\` — no restart needed.`
             );
         } catch (err) {
             return interaction.editReply(
-                `❌ Playback failed with engine **${engineOverride?.name ?? 'random'}**.\n` +
-                `\`\`\`${err.message}\`\`\`\n` +
-                `Check the VPS: \`apt install espeak-ng\` or verify your API keys.`
+                `❌ Playback failed.\n\`\`\`${err.message}\`\`\`\n` +
+                `Make sure \`ffmpeg\` is installed on the VPS (\`apt install ffmpeg\`).`
             );
         }
     },

@@ -1,41 +1,39 @@
 // utils/voiceAlert.js
-// Joins a Discord voice channel, plays a TTS alert, then disconnects.
+// Joins a Discord voice channel, plays a stitched audio alert, then disconnects.
 //
-// ── TTS ENGINES ─────────────────────────────────────────────────────────────
+// HOW IT WORKS
+// ────────────
+// Audio is built by concatenating pre-recorded .wav clips from audio/clips/.
+// This matches how real railroad defect detectors operate — a bank of recorded
+// words played in sequence, not real-time synthesis.
 //
-//  espeak-ng  (recommended, ~CSX MicroHBD style)
-//    Sound : robotic 1990s synthesizer — closest to a real defect detector
-//    Install: apt install espeak-ng       (no npm package needed)
-//    Test   : espeak-ng -v en-us+m3 -s 130 -p 40 -g 8 "Attention train zero three four" --stdout | aplay
+// REPLACING PLACEHOLDER CLIPS
+// ────────────────────────────
+// The clips/ folder ships with Microsoft David placeholder recordings.
+// To use real recordings (e.g. your own voice), just drop in new .wav files
+// with the same names — no code changes needed.
 //
-//  gtts  (Google Translate TTS)
-//    Sound : natural, clear female/male voice — more modern announcement style
-//    Install: npm install gtts            (already in package.json)
-//    Test   : node -e "require('gtts')('Attention train zero three four','en').save('t.mp3',e=>console.log(e||'saved'))"
+// CLIP INVENTORY (30 files)
+// ──────────────────────────
+//  Digits      : 0.wav – 9.wav
+//  Openers     : attention.wav, emergency.wav, train.wav
+//  Station ID  : grdn_detector.wav
+//  Defects     : hotbox_detected.wav, front_truck.wav, rear_truck.wav,
+//                wheel_bearing.wav, derailment_detected.wav,
+//                air_hose_defect.wav, dragging_equipment.wav,
+//                no_defects_detected.wav
+//  Actions     : reduce_speed_inspect.wav, stop_immediately_contact_dispatch.wav,
+//                check_brake_line_reduce_speed.wav, stop_train_inspect_consist.wav
+//  Consist     : cars.wav, speed.wav
+//  Closers     : end_of_message.wav, contact_dispatch.wav
 //
-//  polly  (Amazon Polly "Standard" voice — robotic, professional)
-//    Sound : Matthew/Joanna standard voice — between espeak and gtts
-//    Install: npm install @aws-sdk/client-polly
-//    Setup  : AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION in .env
-//    Test   : see /testalert command
-//
-//  openai  (OpenAI TTS — "onyx" is deep and authoritative)
-//    Sound : modern realistic voice — less robotic, very clear
-//    Install: npm install openai
-//    Setup  : OPENAI_API_KEY in .env
-//
-// ── ENGINE SELECTION ─────────────────────────────────────────────────────────
-//
-//  Set VOICE_ENGINE in .env to pin one engine for testing:
-//    VOICE_ENGINE=espeak    → always use espeak-ng
-//    VOICE_ENGINE=gtts      → always use gtts
-//    VOICE_ENGINE=polly     → always use Amazon Polly
-//    VOICE_ENGINE=openai    → always use OpenAI TTS
-//    VOICE_ENGINE=random    → weighted random (default, production mode)
-//
-//  Weighted random split (adjust VOICE_WEIGHTS to taste):
-//    70 % espeak-ng  (authentic robotic detector voice)
-//    30 % gtts       (clean modern announcement voice)
+// DEFECT TYPES (passed from DefectMonitor → server.js → here)
+//  'Hot Box'           detail: 'front truck' | 'rear truck' | 'wheel bearing' | null
+//  'Derailment'        detail: null
+//  'Air Hose Defect'   detail: null
+//  'Dragging Equipment' detail: null
+//  'Consist Check'     detail: '<carCount> <speedMph>'  e.g. '24 45'
+//  'call'              detail: null  (used by /call command)
 
 const {
     joinVoiceChannel,
@@ -45,125 +43,119 @@ const {
     VoiceConnectionStatus,
     entersState,
 } = require('@discordjs/voice');
-const { Readable } = require('stream');
-const { execFile } = require('child_process');
-const storage = require('../database/storage');
+const { Readable }  = require('stream');
+const { execFile }  = require('child_process');
+const path          = require('path');
+const fs            = require('fs');
+const storage       = require('../database/storage');
 
+const CLIPS_DIR           = path.join(__dirname, '../audio/clips');
 const CONNECT_TIMEOUT_MS  = 5_000;
 const PLAYBACK_TIMEOUT_MS = 30_000;
 
-// ── Weighted engine roster ────────────────────────────────────────────────────
-// Adjust weights here. Engines listed here are tried in order if one fails.
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-const VOICE_WEIGHTS = [
-    {
-        name:    'espeak',
-        weight:  70,
-        options: { voice: 'en-us+m3', speed: 130, pitch: 40, gap: 8 },
-        // Other voices worth trying:
-        //   en-us+m1  — male variant 1 (deeper)
-        //   en-us+m5  — male variant 5 (different cadence)
-        //   en+m3     — British English variant (sounds more HAL-9000)
-    },
-    {
-        name:    'gtts',
-        weight:  30,
-        options: { lang: 'en-us' },
-    },
-];
-
-// ── Engine picker ─────────────────────────────────────────────────────────────
-
-function pickEngine() {
-    const forced = process.env.VOICE_ENGINE;
-    if (forced && forced !== 'random') {
-        const match = VOICE_WEIGHTS.find(e => e.name === forced);
-        if (match) return match;
-        console.warn(`[Voice] Unknown VOICE_ENGINE="${forced}", falling back to random`);
-    }
-
-    const total = VOICE_WEIGHTS.reduce((s, e) => s + e.weight, 0);
-    let r = Math.random() * total;
-    for (const e of VOICE_WEIGHTS) {
-        r -= e.weight;
-        if (r <= 0) return e;
-    }
-    return VOICE_WEIGHTS[0];
+/** Split a number string into individual digit clip names: "034" → ['0','3','4'] */
+function digitsOf(n) {
+    return String(n).replace(/\D/g, '').split('');
 }
 
-// ── TTS generators ────────────────────────────────────────────────────────────
+// ── Clip sequence builder ─────────────────────────────────────────────────────
+// Returns an ordered array of clip names (without .wav extension).
+// Each name maps to a file in audio/clips/.
 
-function generateEspeak(text, opts = {}) {
-    const { voice = 'en-us+m3', speed = 130, pitch = 40, gap = 8 } = opts;
+function buildClipSequence(trainNumber, defectType, detail = null) {
+    const digits = digitsOf(trainNumber);
+
+    switch (defectType) {
+
+        case 'Consist Check': {
+            // detail = '<carCount> <speedMph>' — both spoken digit-by-digit
+            const seq = ['train', ...digits, 'grdn_detector', 'no_defects_detected'];
+            if (detail) {
+                const [cars, spd] = detail.trim().split(/\s+/);
+                if (cars) seq.push(...digitsOf(cars), 'cars');
+                if (spd && spd !== '0') seq.push('speed', ...digitsOf(spd));
+            }
+            seq.push('end_of_message');
+            return seq;
+        }
+
+        case 'Derailment':
+            return [
+                'emergency', 'train', ...digits, 'grdn_detector',
+                'derailment_detected', 'stop_immediately_contact_dispatch',
+                'end_of_message',
+            ];
+
+        case 'Hot Box': {
+            const seq = ['attention', 'train', ...digits, 'grdn_detector', 'hotbox_detected'];
+            if (detail === 'front truck')   seq.push('front_truck');
+            else if (detail === 'rear truck')    seq.push('rear_truck');
+            else if (detail === 'wheel bearing') seq.push('wheel_bearing');
+            seq.push('reduce_speed_inspect', 'end_of_message');
+            return seq;
+        }
+
+        case 'Air Hose Defect':
+            return [
+                'attention', 'train', ...digits, 'grdn_detector',
+                'air_hose_defect', 'check_brake_line_reduce_speed',
+                'end_of_message',
+            ];
+
+        case 'Dragging Equipment':
+            return [
+                'attention', 'train', ...digits, 'grdn_detector',
+                'dragging_equipment', 'stop_train_inspect_consist',
+                'end_of_message',
+            ];
+
+        case 'call':
+            // No "end of message" — mimics a radio page
+            return ['train', ...digits, 'contact_dispatch'];
+
+        default:
+            throw new Error(`[VoiceAlert] Unknown defect type: "${defectType}"`);
+    }
+}
+
+// ── Audio stitcher ────────────────────────────────────────────────────────────
+// Concatenates clip WAVs via ffmpeg filter_complex and returns a WAV buffer.
+
+async function stitchClips(clipNames) {
+    // Verify all clips exist before handing off to ffmpeg
+    const missing = clipNames.filter(n => !fs.existsSync(path.join(CLIPS_DIR, `${n}.wav`)));
+    if (missing.length > 0) {
+        throw new Error(`[VoiceAlert] Missing clips: ${missing.map(n => n + '.wav').join(', ')}`);
+    }
+
+    // Single-clip shortcut — skip ffmpeg overhead
+    if (clipNames.length === 1) {
+        return fs.readFileSync(path.join(CLIPS_DIR, `${clipNames[0]}.wav`));
+    }
+
     return new Promise((resolve, reject) => {
-        execFile('espeak-ng', [
-            '-v', voice,
-            '-s', String(speed),
-            '-p', String(pitch),
-            '-g', String(gap),
-            '--stdout',
-            text,
+        const inputs    = clipNames.flatMap(n => ['-i', path.join(CLIPS_DIR, `${n}.wav`)]);
+        const filterStr = clipNames.map((_, i) => `[${i}:a]`).join('')
+                        + `concat=n=${clipNames.length}:v=0:a=1[out]`;
+
+        execFile('ffmpeg', [
+            ...inputs,
+            '-filter_complex', filterStr,
+            '-map', '[out]',
+            '-f', 'wav',
+            'pipe:1',
         ], { encoding: 'buffer', maxBuffer: 20 * 1024 * 1024 }, (err, stdout) => {
-            if (err) return reject(new Error(`espeak-ng: ${err.message}`));
-            resolve(stdout); // WAV buffer — discordjs/voice handles it via ffmpeg
+            if (err) return reject(new Error(`[VoiceAlert] ffmpeg stitch failed: ${err.message}`));
+            resolve(stdout);
         });
     });
 }
 
-function generateGtts(text, opts = {}) {
-    const gTTS = require('gtts');
-    const { lang = 'en-us' } = opts;
-    return new Promise((resolve, reject) => {
-        // gtts doesn't support all locale codes — fall back to 'en' if needed
-        const safeLang = lang.includes('-') ? lang.split('-')[0] : lang;
-        const g = new gTTS(text, safeLang);
-        const chunks = [];
-        const stream = g.stream();
-        stream.on('data',  chunk => chunks.push(chunk));
-        stream.on('end',   ()    => resolve(Buffer.concat(chunks)));
-        stream.on('error', err   => reject(new Error(`gtts: ${err.message}`)));
-    });
-}
-
-async function generatePolly(text, opts = {}) {
-    const { PollyClient, SynthesizeSpeechCommand } = require('@aws-sdk/client-polly');
-    const client = new PollyClient({ region: process.env.AWS_REGION || 'us-east-1' });
-    const { voice = 'Matthew', engine = 'standard' } = opts;
-    const cmd = new SynthesizeSpeechCommand({
-        Text: text, VoiceId: voice, OutputFormat: 'mp3', Engine: engine,
-    });
-    const data = await client.send(cmd);
-    const chunks = [];
-    for await (const chunk of data.AudioStream) chunks.push(chunk);
-    return Buffer.concat(chunks);
-}
-
-async function generateOpenAI(text, opts = {}) {
-    const OpenAI = require('openai');
-    const ai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const { voice = 'onyx' } = opts; // onyx is deep & authoritative
-    const resp = await ai.audio.speech.create({ model: 'tts-1', voice, input: text });
-    return Buffer.from(await resp.arrayBuffer());
-}
-
-// ── Main TTS dispatch ─────────────────────────────────────────────────────────
-
-async function generateTTS(text, engineOverride = null) {
-    const engine = engineOverride ?? pickEngine();
-    console.log(`[Voice] Engine: ${engine.name}`);
-
-    switch (engine.name) {
-        case 'espeak': return generateEspeak(text, engine.options);
-        case 'gtts':   return generateGtts(text, engine.options);
-        case 'polly':  return generatePolly(text, engine.options);
-        case 'openai': return generateOpenAI(text, engine.options);
-        default: throw new Error(`Unknown TTS engine: ${engine.name}`);
-    }
-}
-
 // ── Core: join VC, play, leave ────────────────────────────────────────────────
 
-async function playInChannel(voiceChannel, text, engineOverride = null) {
+async function playInChannel(voiceChannel, clipNames) {
     const connection = joinVoiceChannel({
         channelId:      voiceChannel.id,
         guildId:        voiceChannel.guild.id,
@@ -175,7 +167,7 @@ async function playInChannel(voiceChannel, text, engineOverride = null) {
     try {
         await entersState(connection, VoiceConnectionStatus.Ready, CONNECT_TIMEOUT_MS);
 
-        const audioBuffer = await generateTTS(text, engineOverride);
+        const audioBuffer = await stitchClips(clipNames);
         const player      = createAudioPlayer();
         const resource    = createAudioResource(Readable.from(audioBuffer));
 
@@ -190,7 +182,7 @@ async function playInChannel(voiceChannel, text, engineOverride = null) {
 
 // ── Alert a train crew by train number ───────────────────────────────────────
 
-async function alertTrain(guild, trainNumber, message, engineOverride = null) {
+async function alertTrain(guild, trainNumber, defectType, detail = null) {
     const crew    = storage.getAllCrew(guild.id);
     const targets = crew.filter(c => String(c.trainNumber) === String(trainNumber));
 
@@ -208,18 +200,20 @@ async function alertTrain(guild, trainNumber, message, engineOverride = null) {
         return { success: false, reason: `Train ${trainNumber} crew are not in a voice channel` };
     }
 
-    await playInChannel(targetVC, message, engineOverride);
+    const clips = buildClipSequence(trainNumber, defectType, detail);
+    await playInChannel(targetVC, clips);
     return { success: true };
 }
 
-// ── Alert a specific VC by ID ─────────────────────────────────────────────────
+// ── Alert a specific VC by channel ID ────────────────────────────────────────
 
-async function alertChannel(guild, channelId, message, engineOverride = null) {
+async function alertChannel(guild, channelId, trainNumber, defectType, detail = null) {
     const channel = guild.channels.cache.get(channelId);
     if (!channel?.isVoiceBased()) {
         return { success: false, reason: 'Channel not found or not a voice channel' };
     }
-    await playInChannel(channel, message, engineOverride);
+    const clips = buildClipSequence(trainNumber, defectType, detail);
+    await playInChannel(channel, clips);
     return { success: true };
 }
 
@@ -227,5 +221,6 @@ module.exports = {
     playInChannel,
     alertTrain,
     alertChannel,
-    VOICE_WEIGHTS, // exposed so /testalert can list them
+    buildClipSequence,
+    CLIPS_DIR,
 };
