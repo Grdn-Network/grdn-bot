@@ -1,8 +1,8 @@
 // buttons/endop.js
 // "End Official Operation" button on the dispatch embed.
-// Delegates to the same handler as /ops end.
+// Delegates to the same handler as /session action:end.
 
-const { handleEnd } = require('../commands/ops/ops');
+const { handleEnd } = require('../commands/ops/session');
 const { hasAnyRole } = require('../utils/permissions');
 const { ADMIN_ROLE, HOST_ROLE } = require('../config');
 

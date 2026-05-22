@@ -1,8 +1,8 @@
 // buttons/syncnames.js
 // "Start Official Operation" button on the dispatch embed.
-// Delegates to the same handler as /ops start.
+// Delegates to the same handler as /session action:start.
 
-const { handleStart } = require('../commands/ops/ops');
+const { handleStart } = require('../commands/ops/session');
 const { hasAnyRole }  = require('../utils/permissions');
 const { ADMIN_ROLE, DISPATCH_QUAL_ROLE } = require('../config');
 
