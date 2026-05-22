@@ -1,12 +1,12 @@
 // commands/dispatch/call.js
 // /call train: — dispatch pages a train crew.
-// Bot joins the crew's current VC, plays "Train X, contact dispatch", then leaves.
-// Staff only.
+// Pings registered crew members in the current channel so Discord notifies them.
+// Staff only (Dispatch Qual, Admin, Host, DVMP Command).
 
 const { SlashCommandBuilder } = require('discord.js');
-const { alertTrain }  = require('../../utils/voiceAlert');
-const { hasAnyRole }  = require('../../utils/permissions');
+const { hasAnyRole } = require('../../utils/permissions');
 const { STAFF_ROLES } = require('../../config');
+const storage = require('../../database/storage');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -27,18 +27,21 @@ module.exports = {
         }
 
         const train = interaction.options.getString('train').trim();
-        await interaction.deferReply({ flags: 64 });
+        const crew  = storage.getAllCrew(interaction.guild.id)
+            .filter(c => String(c.trainNumber) === String(train));
 
-        const result = await alertTrain(
-            interaction.guild,
-            train,
-            `Train ${train}, contact dispatch`
-        );
-
-        if (result.success) {
-            return interaction.editReply(`✅ Paged train **${train}**.`);
-        } else {
-            return interaction.editReply(`⚠️ ${result.reason}.`);
+        if (crew.length === 0) {
+            return interaction.reply({
+                content: `⚠️ No crew registered to train **${train}**.`,
+                flags: 64,
+            });
         }
+
+        const mentions = crew.map(c => `<@${c.userId}>`).join(' ');
+
+        // Visible message — the @mention triggers Discord's normal notification
+        await interaction.reply({
+            content: `📻 ${mentions} — **Train ${train}**, contact dispatch.`,
+        });
     },
 };

@@ -1,11 +1,15 @@
 // commands/dispatch/mod.js
-// /mod action:[add|edit|remove] name: [version:] [url:] [note:]
+// /mod action:[add|edit|remove|toggle] name: [version:] [url:] [note:]
 //
 //   add    — add a new mod (or fully update an existing one)
 //   edit   — surgically update specific fields (leave others untouched)
-//   remove — delete a mod from the list
+//   remove — delete a mod permanently
+//   toggle — flip official ↔ unofficial
+//              • official mods appear in the Operations embed (required mods)
+//              • unofficial mods are hidden from the embed but kept in DB
+//                so hosts can experiment and flip back with one command
 //
-// name autocompletes from existing mods for all three actions.
+// name autocompletes from all mods (official and unofficial) for all actions.
 
 const { SlashCommandBuilder } = require('discord.js');
 const db = require('../../database/db');
@@ -22,9 +26,10 @@ module.exports = {
             .setDescription('What to do')
             .setRequired(true)
             .addChoices(
-                { name: 'Add — add or fully update a mod',        value: 'add'    },
-                { name: 'Edit — update specific fields of a mod', value: 'edit'   },
-                { name: 'Remove — delete a mod from the list',    value: 'remove' },
+                { name: 'Add — add or fully update a mod',                      value: 'add'    },
+                { name: 'Edit — update specific fields of a mod',               value: 'edit'   },
+                { name: 'Remove — delete a mod from the list',                  value: 'remove' },
+                { name: 'Toggle — flip official ↔ unofficial (embed on/off)',   value: 'toggle' },
             )
         )
         .addStringOption(o => o
@@ -49,14 +54,17 @@ module.exports = {
             .setRequired(false)
         ),
 
-    // ── Autocomplete ──────────────────────────────────────────────────────────
+    // ── Autocomplete — show all mods (official and unofficial) ────────────────
     async autocomplete(interaction) {
         const focused = interaction.options.getFocused().toLowerCase();
-        const mods = db.prepare(`SELECT name FROM mods ORDER BY sort_order, id`).all();
+        const mods = db.prepare(`SELECT name, official FROM mods ORDER BY official DESC, sort_order, id`).all();
         const choices = mods
             .filter(m => m.name.toLowerCase().includes(focused))
             .slice(0, 25)
-            .map(m => ({ name: m.name, value: m.name }));
+            .map(m => ({
+                name: m.official ? m.name : `⚗️ ${m.name} (unofficial)`,
+                value: m.name,
+            }));
         await interaction.respond(choices);
     },
 
@@ -70,6 +78,7 @@ module.exports = {
         if (action === 'add')    return handleAdd(interaction);
         if (action === 'edit')   return handleEdit(interaction);
         if (action === 'remove') return handleRemove(interaction);
+        if (action === 'toggle') return handleToggle(interaction);
     },
 };
 
@@ -88,11 +97,12 @@ async function handleAdd(interaction) {
     const existing = db.prepare(`SELECT id FROM mods WHERE name = ? COLLATE NOCASE`).get(name);
 
     if (existing) {
-        db.prepare(`UPDATE mods SET url = ?, version = ?, note = ? WHERE id = ?`)
+        // Fully update — also restore to official if it was unofficial
+        db.prepare(`UPDATE mods SET url = ?, version = ?, note = ?, official = 1 WHERE id = ?`)
             .run(url, version, note, existing.id);
     } else {
         const { m: maxOrder } = db.prepare(`SELECT COALESCE(MAX(sort_order), 0) AS m FROM mods`).get();
-        db.prepare(`INSERT INTO mods (name, url, version, note, sort_order) VALUES (?, ?, ?, ?, ?)`)
+        db.prepare(`INSERT INTO mods (name, url, version, note, sort_order, official) VALUES (?, ?, ?, ?, ?, 1)`)
             .run(name, url, version, note, maxOrder + 1);
     }
 
@@ -116,8 +126,6 @@ async function handleEdit(interaction) {
         });
     }
 
-    // Only update fields that were explicitly provided; leave others untouched.
-    // Passing "clear" removes the field.
     const rawUrl     = interaction.options.getString('url');
     const rawVersion = interaction.options.getString('version');
     const rawNote    = interaction.options.getString('note');
@@ -162,6 +170,31 @@ async function handleRemove(interaction) {
     });
 }
 
+// ── toggle ────────────────────────────────────────────────────────────────────
+
+async function handleToggle(interaction) {
+    const name     = interaction.options.getString('name').trim();
+    const existing = db.prepare(`SELECT id, name, official FROM mods WHERE name = ? COLLATE NOCASE`).get(name);
+
+    if (!existing) {
+        return interaction.reply({
+            content: `❌ No mod named **${name}** found. Use autocomplete or check the spelling.`,
+            flags: 64,
+        });
+    }
+
+    const nowOfficial = existing.official ? 0 : 1;
+    db.prepare(`UPDATE mods SET official = ? WHERE id = ?`).run(nowOfficial, existing.id);
+
+    await rebuildEmbed(interaction);
+
+    const label   = nowOfficial ? 'official — will now appear in the embed' : 'unofficial — hidden from embed';
+    return interaction.reply({
+        content: modListReply(`Toggled **${existing.name}** → ${label}.\n`, ''),
+        flags: 64,
+    });
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function rebuildEmbed(interaction) {
@@ -179,20 +212,35 @@ async function rebuildEmbed(interaction) {
 
 function modListReply(action, name) {
     const allMods = db.prepare(
-        `SELECT name, url, version, note FROM mods ORDER BY sort_order, id`
+        `SELECT name, url, version, note, official FROM mods ORDER BY official DESC, sort_order, id`
     ).all();
 
     if (allMods.length === 0) {
-        return `✅ ${action} **${name}**.\n\n_No mods remaining in list._`;
+        return `✅ ${action}${name ? ` **${name}**` : ''}.\n\n_No mods in list._`;
     }
 
-    const list = allMods.map((m, i) => {
+    const official   = allMods.filter(m => m.official);
+    const unofficial = allMods.filter(m => !m.official);
+
+    const fmt = (m, i) => {
         let line = `${i + 1}. **${m.name}**`;
         if (m.version) line += ` v${m.version}`;
         if (m.url)     line += ` — <${m.url}>`;
         if (m.note)    line += ` *(${m.note})*`;
         return line;
-    }).join('\n');
+    };
 
-    return `✅ ${action} **${name}**.\n\n**Current mod list:**\n${list}`;
+    let out = `✅ ${action}${name ? `**${name}**` : ''}\n\n`;
+
+    if (official.length > 0) {
+        out += `**📦 Official (in embed):**\n${official.map(fmt).join('\n')}`;
+    } else {
+        out += `**📦 Official (in embed):**\n_none_`;
+    }
+
+    if (unofficial.length > 0) {
+        out += `\n\n**⚗️ Unofficial (hidden from embed):**\n${unofficial.map(fmt).join('\n')}`;
+    }
+
+    return out;
 }

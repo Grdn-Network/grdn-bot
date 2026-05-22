@@ -25,9 +25,9 @@ function buildDispatchEmbed() {
 
     const opsActive = !!s.ops_active;
 
-    // Build mods section from the structured mods table
+    // Build mods section — only official mods appear in the public embed
     const mods = db.prepare(
-        `SELECT name, url, version, note FROM mods ORDER BY sort_order, id`
+        `SELECT name, url, version, note FROM mods WHERE official = 1 ORDER BY sort_order, id`
     ).all();
     const modsValue = mods.length === 0
         ? 'No mods configured — use `/mod add` to add required mods.'

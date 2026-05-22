@@ -88,6 +88,9 @@ db.prepare(`
 
 // Migrate: add version column to existing installs
 try { db.prepare(`ALTER TABLE mods ADD COLUMN version TEXT`).run(); } catch {}
+// Migrate: official flag — 1 = shown in embed (default), 0 = unofficial/hidden
+try { db.prepare(`ALTER TABLE mods ADD COLUMN official INTEGER NOT NULL DEFAULT 1`).run(); } catch {}
+db.prepare(`UPDATE mods SET official = 1 WHERE official IS NULL`).run();
 
 /* -----------------------------------------------------
    NO-OP EMBED
