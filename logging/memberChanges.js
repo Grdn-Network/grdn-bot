@@ -3,10 +3,17 @@ const config = require('../config/logging.json');
 const { sendLog } = require('./logHelper');
 const storage = require('../database/storage');
 const { updateTrainBoard } = require('../utils/trainBoard');
-const { TRAIN_BOARD_CHANNEL_ID } = require('../config');
+const { TRAIN_BOARD_CHANNEL_ID, NEWCOMER_ROLE } = require('../config');
 
 module.exports = (client) => {
-    client.on('guildMemberAdd', member => {
+    client.on('guildMemberAdd', async member => {
+        // Assign newcomer role
+        try {
+            await member.roles.add(NEWCOMER_ROLE);
+        } catch (err) {
+            console.error('[memberChanges] Failed to assign newcomer role:', err.message);
+        }
+
         const embed = new EmbedBuilder()
             .setTitle('👋 Member Joined')
             .setColor(0x55ff55)

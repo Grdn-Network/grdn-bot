@@ -29,6 +29,8 @@ module.exports = {
         '1503297126585860187', // DVMP Command
     ],
 
+    NEWCOMER_ROLE: '1474628430149718141',
+
     // Crew Voice Channels — set this to the category ID where Crew VCs should be created
     CREW_VC_CATEGORY_ID: '1474550973878767660',
 
