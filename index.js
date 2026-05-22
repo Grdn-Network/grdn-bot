@@ -125,3 +125,7 @@ process.on('SIGTERM', () => {
 });
 
 client.login(process.env.TOKEN);
+
+// Start HTTP server for GRDNConnect pushes (radio channel changes etc.)
+// Requires HTTP_PORT and HTTP_SECRET in .env
+require('./server')(client);
