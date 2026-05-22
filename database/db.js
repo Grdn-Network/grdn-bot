@@ -93,6 +93,17 @@ try { db.prepare(`ALTER TABLE mods ADD COLUMN official INTEGER NOT NULL DEFAULT 
 db.prepare(`UPDATE mods SET official = 1 WHERE official IS NULL`).run();
 
 /* -----------------------------------------------------
+   DEFECT ALERT PREFERENCES
+   Users opt IN to hotbox/defect alerts (default off).
+----------------------------------------------------- */
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS defect_prefs (
+        user_id TEXT PRIMARY KEY,
+        enabled INTEGER NOT NULL DEFAULT 0
+    )
+`).run();
+
+/* -----------------------------------------------------
    NO-OP EMBED
 ----------------------------------------------------- */
 db.prepare(`
