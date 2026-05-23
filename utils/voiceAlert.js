@@ -56,7 +56,7 @@ const FFMPEG_BIN = (() => { try { return require('ffmpeg-static'); } catch { ret
 const storage       = require('../database/storage');
 
 const CLIPS_DIR           = path.join(__dirname, '../audio/clips');
-const CONNECT_TIMEOUT_MS  = 5_000;
+const CONNECT_TIMEOUT_MS  = 15_000;
 const PLAYBACK_TIMEOUT_MS = 30_000;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
