@@ -114,7 +114,7 @@ module.exports = {
         } catch (err) {
             return interaction.editReply(
                 `❌ Playback failed.\n\`\`\`${err.message}\`\`\`\n` +
-                `Make sure \`ffmpeg\` is installed on the VPS (\`apt install ffmpeg\`).`
+                `Make sure \`ffmpeg\` is installed: \`winget install Gyan.FFmpeg\``
             );
         }
     },
