@@ -39,10 +39,10 @@ db.prepare(`
     VALUES (1, 'Not set', 'Not set', 'Not set', 'GRDN')
 `).run();
 
-// Migrate: update remote_password from old default to GRDN
+// Migrate: update remote_password from any old default value to GRDN
 db.prepare(`
     UPDATE dispatch_settings SET remote_password = 'GRDN'
-    WHERE id = 1 AND (remote_password IS NULL OR remote_password = 'Not set')
+    WHERE id = 1 AND (remote_password IS NULL OR remote_password IN ('Not set', 'N/A', ''))
 `).run();
 
 // Migrate: editable static sections for the unified Operations embed

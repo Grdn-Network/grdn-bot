@@ -9,6 +9,8 @@
 
 const { SlashCommandBuilder, EmbedBuilder, ChannelType } = require('discord.js');
 const fetch    = require('node-fetch');
+const fs       = require('fs');
+const path     = require('path');
 const db       = require('../../database/db');
 const storage  = require('../../database/storage');
 const { hasAnyRole }                             = require('../../utils/permissions');
@@ -42,6 +44,11 @@ module.exports = {
                 { name: 'Board — force-refresh the Train Board',  value: 'board' },
                 { name: 'Embed — post or restore the ops embed',  value: 'embed' },
             )
+        )
+        .addStringOption(opt => opt
+            .setName('host')
+            .setDescription('For Start: tunnel name to connect to (e.g. red, grdn). Defaults to auto-detect from who clicks.')
+            .setRequired(false)
         ),
 
     async execute(interaction) {
@@ -133,15 +140,18 @@ async function handleStart(interaction) {
     const now = Date.now();
     storage.openSession(interaction.guild.id, interaction.user.id, now, 'official');
 
-    // ── Resolve this host's Cloudflare tunnel ─────────────────────────────────
+    // ── Resolve which Cloudflare tunnel to connect to ─────────────────────────
+    // Priority: explicit `host` option → auto-detect from who clicked → direct IP fallback
     // host-tunnels.json: { "discordUserId": "tunnelName", ... }
-    // "grdn" → Remote Dispatch link: https://grdn.grdnnetwork.com
-    //        → GRDNConnect URL:      https://grdn-connect.grdnnetwork.com
-    // Falls back to DV_HOST:DV_PORT from config if host isn't in the file.
+    // "red" → Remote Dispatch link: https://red.grdnnetwork.com
+    //       → GRDNConnect URL:      https://red-connect.grdnnetwork.com
     let connectUrl = `http://${DV_HOST}:${DV_PORT}`;
     try {
-        const hostTunnels = require('../../host-tunnels.json');
-        const tunnelName  = hostTunnels[interaction.user.id];
+        // Read fresh every time — no require() cache so edits to the file take effect immediately
+        const tunnelsPath = path.join(__dirname, '../../host-tunnels.json');
+        const hostTunnels = JSON.parse(fs.readFileSync(tunnelsPath, 'utf8'));
+        const hostOverride = interaction.options?.getString?.('host') ?? null;
+        const tunnelName   = hostOverride || hostTunnels[interaction.user.id];
         if (tunnelName) {
             const rdLink = `https://${tunnelName}.grdnnetwork.com`;
             db.prepare(`
@@ -151,7 +161,9 @@ async function handleStart(interaction) {
             `).run();
             db.prepare(`UPDATE dispatch_settings SET remote_link = ? WHERE id = 1`).run(rdLink);
             connectUrl = deriveDvConnectUrl(rdLink) ?? connectUrl;
-            console.log(`[Session] Host tunnel: ${tunnelName} → ${connectUrl}`);
+            console.log(`[Session] Tunnel: ${tunnelName}${hostOverride ? ' (manual override)' : ''} → ${connectUrl}`);
+        } else {
+            console.warn(`[Session] No tunnel found for user ${interaction.user.id} — using direct IP`);
         }
     } catch (err) {
         console.warn('[Session] host-tunnels.json lookup failed:', err.message);
