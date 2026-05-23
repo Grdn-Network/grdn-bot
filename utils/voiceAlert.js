@@ -188,6 +188,14 @@ async function playInChannel(voiceChannel, clipNames) {
         selfMute:       false,
     });
 
+    // Log every state transition so we can see where it gets stuck
+    connection.on('stateChange', (oldState, newState) => {
+        console.log(`[VoiceAlert] connection: ${oldState.status} -> ${newState.status}`);
+        if (newState.status === VoiceConnectionStatus.Disconnected) {
+            console.log(`[VoiceAlert] disconnect reason: ${newState.reason} closeCode: ${newState.closeCode}`);
+        }
+    });
+
     try {
         // Step 1 — wait for voice connection to be ready
         await entersState(connection, VoiceConnectionStatus.Ready, CONNECT_TIMEOUT_MS)
