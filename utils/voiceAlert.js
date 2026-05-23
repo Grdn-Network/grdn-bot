@@ -188,8 +188,9 @@ async function playInChannel(voiceChannel, clipNames) {
         selfMute:       false,
     });
 
-    // Collect every state transition so we can include them in the error if it fails
-    const stateLog = [];
+    // Collect state transitions and debug output so we can diagnose failures
+    const stateLog  = [];
+    const debugLog  = [];
     connection.on('stateChange', (oldState, newState) => {
         const entry = `${oldState.status} -> ${newState.status}` +
             (newState.status === VoiceConnectionStatus.Disconnected
@@ -197,11 +198,20 @@ async function playInChannel(voiceChannel, clipNames) {
                 : '');
         stateLog.push(entry);
     });
+    connection.on('debug',  (msg) => debugLog.push(msg));
+    connection.on('error',  (err) => debugLog.push(`[error] ${err.message}`));
 
     try {
         // Step 1 — wait for voice connection to be ready
         await entersState(connection, VoiceConnectionStatus.Ready, CONNECT_TIMEOUT_MS)
-            .catch(err => { throw new Error(`STEP1_CONNECT: ${err.message}\nStates: ${stateLog.join(' | ') || 'none'}`); });
+            .catch(err => {
+                const tail = debugLog.slice(-20).join('\n');
+                throw new Error(
+                    `STEP1_CONNECT: ${err.message}\n` +
+                    `States: ${stateLog.join(' | ') || 'none'}\n` +
+                    `--- debug (last 20 lines) ---\n${tail || '(none)'}`
+                );
+            });
 
         // Step 2 — stitch clips with ffmpeg
         const audioBuffer = await stitchClips(clipNames);
