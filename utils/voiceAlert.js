@@ -47,6 +47,10 @@ const { Readable }  = require('stream');
 const { execFile }  = require('child_process');
 const path          = require('path');
 const fs            = require('fs');
+
+// Use bundled ffmpeg binary (ffmpeg-static) so no system PATH config is needed.
+// Falls back to 'ffmpeg' if the package is somehow absent.
+const FFMPEG_BIN = (() => { try { return require('ffmpeg-static'); } catch { return 'ffmpeg'; } })();
 const storage       = require('../database/storage');
 
 const CLIPS_DIR           = path.join(__dirname, '../audio/clips');
@@ -140,7 +144,7 @@ async function stitchClips(clipNames) {
         const filterStr = clipNames.map((_, i) => `[${i}:a]`).join('')
                         + `concat=n=${clipNames.length}:v=0:a=1[out]`;
 
-        execFile('ffmpeg', [
+        execFile(FFMPEG_BIN, [
             ...inputs,
             '-filter_complex', filterStr,
             '-map', '[out]',
