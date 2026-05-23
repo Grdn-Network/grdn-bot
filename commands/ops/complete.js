@@ -53,7 +53,7 @@ module.exports = {
             if (result.ok) {
                 // Delete the ephemeral defer, then post a public success message.
                 await interaction.deleteReply();
-                return interaction.followUp(`✅ Job **${jobId}** completed. The crew will receive payment in-game.`);
+                return interaction.followUp(`✅ Job **${jobId}** completed. Payment has been made.`);
             } else {
                 const detail = result.error ? `\n> ${result.error}` : '';
                 return fail(`⚠️ Could not complete **${jobId}**.${detail}`);
