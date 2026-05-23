@@ -69,7 +69,7 @@ async function syncEmbedFromMod(guild) {
     // Do this first so the embed shows correctly even if the game is offline.
     db.prepare(`
         INSERT OR IGNORE INTO dispatch_settings (id, server_name, server_password, remote_link, remote_password)
-        VALUES (1, 'Not set', 'Not set', 'Not set', 'Not set')
+        VALUES (1, 'Not set', 'Not set', 'Not set', 'GRDN')
     `).run();
     db.prepare(`UPDATE dispatch_settings SET ops_active = 1 WHERE id = 1`).run();
 
@@ -147,7 +147,7 @@ async function handleStart(interaction) {
             db.prepare(`
                 INSERT OR IGNORE INTO dispatch_settings
                     (id, server_name, server_password, remote_link, remote_password)
-                VALUES (1, 'Not set', 'Not set', 'Not set', 'Not set')
+                VALUES (1, 'Not set', 'Not set', 'Not set', 'GRDN')
             `).run();
             db.prepare(`UPDATE dispatch_settings SET remote_link = ? WHERE id = 1`).run(rdLink);
             connectUrl = deriveDvConnectUrl(rdLink) ?? connectUrl;

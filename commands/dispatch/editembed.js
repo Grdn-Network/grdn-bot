@@ -54,7 +54,7 @@ module.exports = {
         // Ensure settings row exists before writing
         db.prepare(`
             INSERT OR IGNORE INTO dispatch_settings (id, server_name, server_password, remote_link, remote_password)
-            VALUES (1, 'Not set', 'Not set', 'Not set', 'Not set')
+            VALUES (1, 'Not set', 'Not set', 'Not set', 'GRDN')
         `).run();
 
         // Write new value — column name comes from our own whitelist, never from user input
