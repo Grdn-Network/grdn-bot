@@ -234,17 +234,32 @@ async function handleEnd(interaction) {
     const activeSession = storage.getActiveSession(guild.id);
     const participants  = activeSession ? storage.getSessionCrew(activeSession.id) : [];
 
+    // Build the unified reset set: session_crew participants + anyone in the crew DB
+    // who has a train number set. The second group catches people who ran /setcrew
+    // before the session opened — enrollIfSessionActive is a no-op when no session is
+    // active, so those users never land in session_crew, but their nickname is still
+    // formatted with a train number and needs to be cleared on end-op.
+    const allCrew = storage.getAllCrew(guild.id);
+    const toReset = new Map(); // userId → preferredName
+
+    for (const userId of participants) {
+        const crew = storage.getCrewRaw(userId);
+        toReset.set(userId, crew?.preferred_name ?? null);
+    }
+    for (const c of allCrew) {
+        if (!toReset.has(c.userId) && c.trainNumber && c.trainNumber.trim()) {
+            toReset.set(c.userId, c.preferredName ?? null);
+        }
+    }
+
     // Close session — writes final minutes to ops_log, clears session_crew
     const sessionId = storage.closeSession(guild.id, interaction.user.id, now);
 
     let reset = 0, failed = 0;
 
-    for (const userId of participants) {
+    for (const [userId, preferredName] of toReset) {
         try {
             storage.clearTrainNumber(userId);
-
-            const crew          = storage.getCrewRaw(userId);
-            const preferredName = crew?.preferred_name ?? null;
 
             // 10007 = Unknown Member (definitively left server)
             const member = await guild.members.fetch(userId)
