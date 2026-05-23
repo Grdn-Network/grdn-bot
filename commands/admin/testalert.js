@@ -112,10 +112,16 @@ module.exports = {
                 `To use real recordings, drop \`.wav\` files into \`audio/clips/\` — no restart needed.`
             );
         } catch (err) {
-            return interaction.editReply(
-                `❌ Playback failed.\n\`\`\`${err.message}\`\`\`\n` +
-                `Make sure \`ffmpeg\` is installed: \`winget install Gyan.FFmpeg\``
-            );
+            const msg = err.message ?? '';
+            let hint = '';
+            if (msg.includes('STEP1_CONNECT')) {
+                hint = '\n**Voice connection failed** — the VPS cannot reach Discord\'s voice servers via UDP.\nCheck the hosting provider\'s external firewall and allow outbound UDP traffic.';
+            } else if (msg.includes('ffmpeg') || msg.includes('STEP2')) {
+                hint = '\nMake sure `ffmpeg` is installed: `winget install Gyan.FFmpeg`';
+            } else if (msg.includes('STEP4_PLAYBACK')) {
+                hint = '\nPlayback timed out — the audio resource may be malformed.';
+            }
+            return interaction.editReply(`❌ Playback failed.\n\`\`\`${msg}\`\`\`${hint}`);
         }
     },
 };
