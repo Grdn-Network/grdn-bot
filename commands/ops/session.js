@@ -62,49 +62,62 @@ module.exports = {
 // ── start ─────────────────────────────────────────────────────────────────────
 
 async function syncEmbedFromMod(guild) {
-    const stored = db.prepare(`SELECT remote_link FROM dispatch_settings WHERE id = 1`).get();
-    const rdLink = stored?.remote_link;
-    if (!rdLink || rdLink === 'Not set')
-        return '⚠️ Remote Dispatch link not set — run `/editembed field:remote_dispatch_link` first.';
-
-    const connectUrl = deriveDvConnectUrl(rdLink);
-    if (!connectUrl) return '⚠️ Could not derive GRDNConnect URL from Remote Dispatch link.';
-
-    storage.setDvUrl(connectUrl);
-
-    let serverName, password;
-    try {
-        const res = await fetch(`${connectUrl}/server-info`, { timeout: FETCH_TIMEOUT_MS });
-        if (!res.ok) return '⚠️ GRDNConnect responded with an error — embed not updated.';
-        const data = await res.json();
-        serverName = data.serverName;
-        password   = data.password;
-    } catch {
-        return '⚠️ Could not reach GRDNConnect — is the game running?';
-    }
-
-    if (!serverName && !password) return '⚠️ GRDNConnect returned no server info — is DVMP running?';
-
+    // Step 1 — mark ops active immediately.
+    // Do this first so the embed shows correctly even if the game is offline.
     db.prepare(`
         INSERT OR IGNORE INTO dispatch_settings (id, server_name, server_password, remote_link, remote_password)
         VALUES (1, 'Not set', 'Not set', 'Not set', 'Not set')
     `).run();
+    db.prepare(`UPDATE dispatch_settings SET ops_active = 1 WHERE id = 1`).run();
+
+    // Step 2 — resolve the GRDNConnect URL.
+    // Prefer a Remote Dispatch link (e.g. grdn.grdnnetwork.com → grdn-connect.grdnnetwork.com).
+    // If none is set or it can't be derived, fall back to the direct IP from config.
+    const stored  = db.prepare(`SELECT remote_link FROM dispatch_settings WHERE id = 1`).get();
+    const rdLink  = stored?.remote_link;
+    const derived = (rdLink && rdLink !== 'Not set') ? deriveDvConnectUrl(rdLink) : null;
+    const connectUrl = derived ?? `http://${DV_HOST}:${DV_PORT}`;
+    storage.setDvUrl(connectUrl);
+
+    // Step 3 — try to fetch server name / password from GRDNConnect.
+    // A failure here is non-fatal — session is already marked active.
+    let serverName, password, gameStatus;
+    try {
+        const res = await fetch(`${connectUrl}/server-info`, { timeout: FETCH_TIMEOUT_MS });
+        if (res.ok) {
+            const data = await res.json();
+            serverName = data.serverName;
+            password   = data.password;
+            gameStatus = 'ok';
+        } else {
+            gameStatus = `HTTP ${res.status}`;
+        }
+    } catch (err) {
+        gameStatus = 'unreachable';
+    }
+
+    // Step 4 — write whatever info we got into the DB.
     if (serverName) db.prepare(`UPDATE dispatch_settings SET server_name     = ? WHERE id = 1`).run(serverName);
     if (password)   db.prepare(`UPDATE dispatch_settings SET server_password = ? WHERE id = 1`).run(password);
-    db.prepare(`UPDATE dispatch_settings SET remote_link = ? WHERE id = 1`).run(rdLink);
-    db.prepare(`UPDATE dispatch_settings SET ops_active  = 1 WHERE id = 1`).run();
+    if (rdLink && rdLink !== 'Not set')
+        db.prepare(`UPDATE dispatch_settings SET remote_link = ? WHERE id = 1`).run(rdLink);
 
+    // Step 5 — push the updated embed to Discord.
     const embedRow = db.prepare(`SELECT message_id FROM dispatch_embed WHERE id = 1`).get();
-    if (!embedRow) return '✅ DB updated — no embed posted yet (run `/operembed`).';
+    if (!embedRow) return '✅ Session open — no embed posted yet (run `/operembed`).';
 
     const channel = guild.channels.cache.get(DISPATCH_CHANNEL_ID);
-    if (!channel) return '✅ DB updated — dispatch channel not found.';
+    if (!channel)  return '✅ Session open — dispatch channel not found.';
 
     const msg = await channel.messages.fetch(embedRow.message_id).catch(() => null);
-    if (!msg) return '✅ DB updated — embed message not found (run `/operembed`).';
+    if (!msg)  return '✅ Session open — embed message not found (run `/operembed`).';
 
     await msg.edit({ embeds: [buildDispatchEmbed()], components: msg.components });
-    return `✅ Embed updated — **${serverName}** | ${rdLink}`;
+
+    if (serverName) return `✅ Embed updated — **${serverName}** | ${rdLink || connectUrl}`;
+    if (gameStatus === 'unreachable')
+        return `✅ Session open — game offline or not yet started (embed updated without server info).`;
+    return `✅ Session open — GRDNConnect at \`${connectUrl}\` returned status: ${gameStatus}.`;
 }
 
 async function handleStart(interaction) {
