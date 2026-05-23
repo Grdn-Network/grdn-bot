@@ -1,8 +1,9 @@
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, ChannelType } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
-const { CRASH_LOG_CHANNEL_ID, ADMIN_ROLE, TRAIN_BOARD_CHANNEL_ID } = require('./config');
+const { CRASH_LOG_CHANNEL_ID, ADMIN_ROLE, TRAIN_BOARD_CHANNEL_ID, CREW_VC_CATEGORY_ID } = require('./config');
+const fetch = require('node-fetch');
 const storage = require('./database/storage');
 const { updateTrainBoard } = require('./utils/trainBoard');
 
@@ -52,11 +53,14 @@ require('./events/opsVoiceTracker')(client);
 // How often to poll GRDNConnect for live loco data (ms)
 const TRAIN_BOARD_POLL_MS = 30_000;
 
+// How often to re-push the crew channel list to the game radio (ms)
+// Picks up new crew VCs created during the session without a restart.
+const CHANNEL_PUSH_MS = 90_000;
+
 client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}`);
 
     // Continuously refresh the train board while an op session is active.
-    // Each tick tries every guild the bot is in; skips guilds with no active session.
     setInterval(async () => {
         for (const [, guild] of client.guilds.cache) {
             try {
@@ -67,6 +71,38 @@ client.once('ready', () => {
             }
         }
     }, TRAIN_BOARD_POLL_MS);
+
+    // Periodically re-push the live crew VC list to the game's radio mode.
+    // Runs every 90s so newly-created crew VCs appear in GRDN RADIO without a restart.
+    setInterval(async () => {
+        for (const [, guild] of client.guilds.cache) {
+            try {
+                if (!storage.getActiveSession(guild.id)) continue;
+                const dvUrl = storage.getDvBaseUrl();
+                if (!dvUrl) continue;
+
+                const channels = [...guild.channels.cache.values()]
+                    .filter(ch => ch.parentId === CREW_VC_CATEGORY_ID && ch.type === ChannelType.GuildVoice)
+                    .sort((a, b) => a.rawPosition - b.rawPosition)
+                    .map(ch => ({ name: ch.name, vcId: ch.id }));
+
+                fetch(`${dvUrl}/session-config`, {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({
+                        botUrl:   process.env.BOT_PUBLIC_URL || '',
+                        secret:   process.env.HTTP_SECRET    || '',
+                        channels,
+                    }),
+                    timeout: 3000,
+                }).then(r => {
+                    if (r.ok) console.log(`[ChannelPush] ${channels.length} channel(s) → game`);
+                }).catch(() => {}); // game offline is normal — silent fail
+            } catch (err) {
+                console.error('[ChannelPush]', guild.id, err.message);
+            }
+        }
+    }, CHANNEL_PUSH_MS);
 });
 
 // Shared crash handler

@@ -7,7 +7,7 @@
 //   board — force-post a fresh Train Board
 //   embed — post or restore the Operations dispatch embed
 
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ChannelType } = require('discord.js');
 const fetch    = require('node-fetch');
 const db       = require('../../database/db');
 const storage  = require('../../database/storage');
@@ -19,7 +19,7 @@ const { sendLog }                                = require('../../logging/logHel
 const loggingConfig                              = require('../../config/logging.json');
 const {
     ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE, DVMP_COMMAND_ROLE,
-    DISPATCH_CHANNEL_ID, TRAIN_BOARD_CHANNEL_ID,
+    DISPATCH_CHANNEL_ID, TRAIN_BOARD_CHANNEL_ID, CREW_VC_CATEGORY_ID,
     DV_HOST, DV_PORT,
 } = require('../../config');
 
@@ -157,20 +157,25 @@ async function handleStart(interaction) {
         console.warn('[Session] host-tunnels.json lookup failed:', err.message);
     }
 
-    // ── Push bot URL + secret to GRDNConnect ─────────────────────────────────
+    // ── Push bot URL, secret, and live crew channels to GRDNConnect ──────────
     // Uses the tunnel URL if resolved above, direct IP if not.
     // Fire-and-forget — don't let game-unreachable block the Discord response.
-    const botPublicUrl = process.env.BOT_PUBLIC_URL || '';
-    const botSecret    = process.env.HTTP_SECRET    || '';
+    const botPublicUrl  = process.env.BOT_PUBLIC_URL || '';
+    const botSecret     = process.env.HTTP_SECRET    || '';
+    const crewChannels  = interaction.guild.channels.cache
+        .filter(ch => ch.parentId === CREW_VC_CATEGORY_ID && ch.type === ChannelType.GuildVoice)
+        .sort((a, b) => a.rawPosition - b.rawPosition)
+        .map(ch => ({ name: ch.name, vcId: ch.id }));
+
     if (botPublicUrl) {
         fetch(`${connectUrl}/session-config`, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ botUrl: botPublicUrl, secret: botSecret }),
+            body:    JSON.stringify({ botUrl: botPublicUrl, secret: botSecret, channels: crewChannels }),
             timeout: 3000,
         }).then(r => {
             if (!r.ok) console.warn(`[SessionConfig] Game returned ${r.status}`);
-            else       console.log(`[SessionConfig] Bot config pushed to game (${botPublicUrl})`);
+            else       console.log(`[SessionConfig] Pushed to game — ${crewChannels.length} channel(s), url=${botPublicUrl}`);
         }).catch(err =>
             console.warn('[SessionConfig] Could not reach game — manual UMM config required:', err.message)
         );
