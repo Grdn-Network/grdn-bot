@@ -55,9 +55,24 @@ const crypto        = require('crypto');
 const FFMPEG_BIN = (() => { try { return require('ffmpeg-static'); } catch { return 'ffmpeg'; } })();
 const storage       = require('../database/storage');
 
-const CLIPS_DIR           = path.join(__dirname, '../audio/clips');
+const VOICES_DIR          = path.join(__dirname, '../audio/clips');
 const CONNECT_TIMEOUT_MS  = 15_000;
 const PLAYBACK_TIMEOUT_MS = 30_000;
+
+// Each subfolder of VOICES_DIR is a voice set.
+// Auto-detected at startup: included if it contains grdn_detector.wav.
+// Add wife's recordings to audio/clips/wife/ and it appears automatically.
+const VOICE_SETS = fs.readdirSync(VOICES_DIR)
+    .filter(name => fs.existsSync(path.join(VOICES_DIR, name, 'grdn_detector.wav')));
+
+if (VOICE_SETS.length === 0)
+    console.error('[VoiceAlert] No voice sets found — check audio/clips/ subfolders.');
+else
+    console.log(`[VoiceAlert] Voice sets loaded: ${VOICE_SETS.join(', ')}`);
+
+function pickVoiceDir() {
+    return path.join(VOICES_DIR, VOICE_SETS[Math.floor(Math.random() * VOICE_SETS.length)]);
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -230,14 +245,14 @@ function concatWavs(buffers) {
 // Fast path: pure-JS WAV concat (no process spawn).
 // Fallback: ffmpeg filter_complex concat (handles format differences).
 
-async function stitchClips(clipNames) {
+async function stitchClips(clipNames, clipsDir) {
     // Verify all clips exist upfront
-    const missing = clipNames.filter(n => !fs.existsSync(path.join(CLIPS_DIR, `${n}.wav`)));
+    const missing = clipNames.filter(n => !fs.existsSync(path.join(clipsDir, `${n}.wav`)));
     if (missing.length > 0) {
         throw new Error(`[VoiceAlert] Missing clips: ${missing.map(n => n + '.wav').join(', ')}`);
     }
 
-    const buffers = clipNames.map(n => fs.readFileSync(path.join(CLIPS_DIR, `${n}.wav`)));
+    const buffers = clipNames.map(n => fs.readFileSync(path.join(clipsDir, `${n}.wav`)));
 
     // Single-clip shortcut
     if (buffers.length === 1) return buffers[0];
@@ -254,7 +269,7 @@ async function stitchClips(clipNames) {
     const tmpFile = path.join(os.tmpdir(), `grdn_${crypto.randomBytes(8).toString('hex')}.wav`);
 
     return new Promise((resolve, reject) => {
-        const inputs    = clipNames.flatMap(n => ['-i', path.join(CLIPS_DIR, `${n}.wav`)]);
+        const inputs    = clipNames.flatMap(n => ['-i', path.join(clipsDir, `${n}.wav`)]);
         const filterStr = clipNames.map((_, i) => `[${i}:a]`).join('')
                         + `concat=n=${clipNames.length}:v=0:a=1[out]`;
 
@@ -288,7 +303,7 @@ async function stitchClips(clipNames) {
 
 // ── Core: join VC, play, leave ────────────────────────────────────────────────
 
-async function playInChannel(voiceChannel, clipNames) {
+async function playInChannel(voiceChannel, clipNames, clipsDir = pickVoiceDir()) {
     const connection = joinVoiceChannel({
         channelId:      voiceChannel.id,
         guildId:        voiceChannel.guild.id,
@@ -313,7 +328,7 @@ async function playInChannel(voiceChannel, clipNames) {
 
     // Kick off clip stitching immediately — runs in parallel with VC setup.
     // By the time the voice connection is Ready the audio is almost always done.
-    const stitchPromise = stitchClips(clipNames);
+    const stitchPromise = stitchClips(clipNames, clipsDir);
 
     try {
         // Step 1 — wait for voice connection to be ready
@@ -369,8 +384,10 @@ async function alertTrain(guild, trainNumber, defectType, detail = null) {
         return { success: false, reason: `Train ${trainNumber} crew are not in a voice channel` };
     }
 
+    const clipsDir = pickVoiceDir();
+    console.log(`[VoiceAlert] Using voice: ${path.basename(clipsDir)}`);
     const clips = buildClipSequence(trainNumber, defectType, detail);
-    await playInChannel(targetVC, clips);
+    await playInChannel(targetVC, clips, clipsDir);
     return { success: true };
 }
 
@@ -381,8 +398,10 @@ async function alertChannel(guild, channelId, trainNumber, defectType, detail = 
     if (!channel?.isVoiceBased()) {
         return { success: false, reason: 'Channel not found or not a voice channel' };
     }
+    const clipsDir = pickVoiceDir();
+    console.log(`[VoiceAlert] Using voice: ${path.basename(clipsDir)}`);
     const clips = buildClipSequence(trainNumber, defectType, detail);
-    await playInChannel(channel, clips);
+    await playInChannel(channel, clips, clipsDir);
     return { success: true };
 }
 
@@ -391,5 +410,6 @@ module.exports = {
     alertTrain,
     alertChannel,
     buildClipSequence,
-    CLIPS_DIR,
+    VOICES_DIR,
+    VOICE_SETS,
 };

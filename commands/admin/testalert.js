@@ -94,13 +94,17 @@ module.exports = {
             return interaction.editReply(`❌ ${err.message}`);
         }
 
-        // Check for any missing clips up front and report clearly
-        const clipsDir = voiceAlert.CLIPS_DIR;
-        const missing  = clips.filter(n => !fs.existsSync(path.join(clipsDir, `${n}.wav`)));
+        // Check for any missing clips across all voice sets and report clearly
+        const missing = [];
+        for (const set of voiceAlert.VOICE_SETS) {
+            const dir = path.join(voiceAlert.VOICES_DIR, set);
+            clips.filter(n => !fs.existsSync(path.join(dir, `${n}.wav`)))
+                 .forEach(n => missing.push(`[${set}] ${n}.wav`));
+        }
         if (missing.length > 0) {
             return interaction.editReply(
-                `❌ Missing clip files:\n\`\`\`${missing.map(n => n + '.wav').join('\n')}\`\`\`\n` +
-                `Drop them into \`audio/clips/\` and try again.`
+                `❌ Missing clip files:\n\`\`\`${missing.join('\n')}\`\`\`\n` +
+                `Drop them into the correct \`audio/clips/<voice>/\` folder and try again.`
             );
         }
 
