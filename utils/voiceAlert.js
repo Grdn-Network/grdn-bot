@@ -127,9 +127,13 @@ function buildClipSequence(trainNumber, defectType, detail = null) {
 }
 
 // ── Pure-JS WAV concat ────────────────────────────────────────────────────────
-// Scans RIFF chunks to extract fmt + data, verifies all clips share the same
-// format, then concatenates data sections with a single new header.
+// Scans RIFF chunks to extract fmt + data, trims per-clip silence, verifies
+// all clips share the same format, then concatenates with a single new header.
 // No process spawn, no temp files — typically completes in < 5 ms.
+
+// How much trailing audio to keep after the last non-silent sample.
+// Real detectors let each word decay naturally before the next starts.
+const TAIL_MS = 60;
 
 function parseWav(buf) {
     if (buf.toString('ascii', 0, 4) !== 'RIFF' ||
@@ -176,6 +180,33 @@ function buildWavHeader(fmt, dataSize) {
     return h;
 }
 
+// Strips leading + trailing silence from a PCM buffer.
+// Keeps TAIL_MS of audio after the last non-silent sample so words decay naturally.
+function trimSilence(pcm, fmt) {
+    const { bitsPerSample, numChannels, sampleRate } = fmt;
+    const bytesPerSample = bitsPerSample / 8;
+    const blockSize      = bytesPerSample * numChannels;
+    const maxAmp         = bitsPerSample === 16 ? 32767 : 127;
+    const threshold      = 0.005 * maxAmp;   // 0.5 % of peak — filters TTS pad silence
+    const tailBytes      = Math.ceil((TAIL_MS / 1000) * sampleRate) * blockSize;
+
+    const amp = (i) => {
+        if (bitsPerSample === 16) return Math.abs(pcm.readInt16LE(i));
+        if (bitsPerSample ===  8) return Math.abs(pcm.readUInt8(i) - 128); // unsigned PCM
+        return 0;
+    };
+
+    let start = pcm.length, end = 0;
+
+    for (let i = 0; i < pcm.length - blockSize; i += blockSize)
+        if (amp(i) > threshold) { start = i; break; }
+
+    for (let i = pcm.length - blockSize; i >= 0; i -= blockSize)
+        if (amp(i) > threshold) { end = Math.min(pcm.length, i + blockSize + tailBytes); break; }
+
+    return start < end ? pcm.slice(start, end) : pcm; // guard: return original if all-silent
+}
+
 function concatWavs(buffers) {
     const parsed = buffers.map(parseWav);
     const ref    = parsed[0].fmt;
@@ -187,7 +218,7 @@ function concatWavs(buffers) {
             throw new Error('Clip format mismatch — cannot fast-concat');
         }
     }
-    const chunks    = parsed.map(p => p.data);
+    const chunks    = parsed.map(p => trimSilence(p.data, ref));
     const totalSize = chunks.reduce((s, c) => s + c.length, 0);
     return Buffer.concat([buildWavHeader(ref, totalSize), ...chunks]);
 }
