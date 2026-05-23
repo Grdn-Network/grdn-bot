@@ -1,10 +1,11 @@
 // commands/ops/session.js
-// /session action:[start|end|jobs|board]
+// /session action:[start|end|jobs|board|embed]
 //
 //   start — open official ops session, sync embed from GRDNConnect
 //   end   — close session, save hours, reset nicknames
 //   jobs  — list active DV jobs
 //   board — force-post a fresh Train Board
+//   embed — post or restore the Operations dispatch embed
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const fetch    = require('node-fetch');
@@ -12,12 +13,12 @@ const db       = require('../../database/db');
 const storage  = require('../../database/storage');
 const { hasAnyRole }                             = require('../../utils/permissions');
 const { updateTrainBoard }                       = require('../../utils/trainBoard');
-const { buildDispatchEmbed, deriveDvConnectUrl } = require('../../utils/dispatchEmbed');
+const { buildDispatchEmbed, buildDispatchComponents, deriveDvConnectUrl } = require('../../utils/dispatchEmbed');
 const { deleteAllCrewVCs }                       = require('../../utils/crewVCManager');
 const { sendLog }                                = require('../../logging/logHelper');
 const loggingConfig                              = require('../../config/logging.json');
 const {
-    ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE,
+    ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE, DVMP_COMMAND_ROLE,
     DISPATCH_CHANNEL_ID, TRAIN_BOARD_CHANNEL_ID,
     DV_HOST, DV_PORT,
 } = require('../../config');
@@ -39,6 +40,7 @@ module.exports = {
                 { name: 'End — close session and save hours',     value: 'end'   },
                 { name: 'Jobs — list active Derail Valley jobs',  value: 'jobs'  },
                 { name: 'Board — force-refresh the Train Board',  value: 'board' },
+                { name: 'Embed — post or restore the ops embed',  value: 'embed' },
             )
         ),
 
@@ -48,6 +50,7 @@ module.exports = {
         if (action === 'end')   return handleEnd(interaction);
         if (action === 'jobs')  return handleJobs(interaction);
         if (action === 'board') return handleBoard(interaction);
+        if (action === 'embed') return handleEmbed(interaction);
     },
 
     // Exposed for button handlers
@@ -340,4 +343,39 @@ async function handleBoard(interaction) {
         .catch(err => console.error('[TrainBoard] board refresh failed:', err));
 
     return interaction.editReply('✅ New Train Board sent.');
+}
+
+// ── embed ─────────────────────────────────────────────────────────────────────
+
+async function handleEmbed(interaction) {
+    if (!hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE, DVMP_COMMAND_ROLE])) {
+        return interaction.reply({ content: '❌ Only admins and hosts can post the embed.', flags: 64 });
+    }
+
+    const channel = interaction.guild.channels.cache.get(DISPATCH_CHANNEL_ID);
+    if (!channel) {
+        return interaction.reply({ content: '❌ Dispatch channel not found.', flags: 64 });
+    }
+
+    // If a live embed already exists, don't post a duplicate
+    const existing = db.prepare(`SELECT message_id FROM dispatch_embed WHERE id = 1`).get();
+    if (existing?.message_id) {
+        const existingMsg = await channel.messages.fetch(existing.message_id).catch(() => null);
+        if (existingMsg) {
+            return interaction.reply({
+                content: '❌ An Operations embed already exists. Delete the old one first, or use `/editembed` to update a field.',
+                flags: 64,
+            });
+        }
+    }
+
+    const msg = await channel.send({
+        embeds:     [buildDispatchEmbed()],
+        components: buildDispatchComponents(),
+    });
+
+    db.prepare(`DELETE FROM dispatch_embed`).run();
+    db.prepare(`INSERT INTO dispatch_embed (id, message_id) VALUES (1, ?)`).run(msg.id);
+
+    return interaction.reply({ content: '✅ Operations embed posted.', flags: 64 });
 }
