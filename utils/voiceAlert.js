@@ -186,6 +186,7 @@ async function playInChannel(voiceChannel, clipNames) {
         adapterCreator: voiceChannel.guild.voiceAdapterCreator,
         selfDeaf:       false,
         selfMute:       false,
+        debug:          true,   // enables the 'debug' event so we can diagnose failures
     });
 
     // Collect state transitions and debug output so we can diagnose failures
