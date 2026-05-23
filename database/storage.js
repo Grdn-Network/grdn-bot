@@ -6,6 +6,15 @@ const db = require('./db');
 // Ensure required tables exist
 // ===============================
 
+// Steam link table — maps Steam ID64 → Discord user ID (one-time link, permanent)
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS steam_links (
+        steam_id   TEXT PRIMARY KEY,
+        discord_id TEXT NOT NULL,
+        linked_at  INTEGER NOT NULL
+    )
+`).run();
+
 // Assignments table (train → assignment info)
 db.prepare(`
     CREATE TABLE IF NOT EXISTS assignments (
@@ -187,6 +196,39 @@ function removeCrew(userId) {
  */
 function clearAllTrainNumbers() {
     db.prepare(`UPDATE registrations SET train_number = ''`).run();
+}
+
+// ===============================
+// STEAM LINK FUNCTIONS
+// ===============================
+
+/**
+ * Returns { discordId } for a Steam ID, or null if not linked.
+ */
+function getSteamLink(steamId) {
+    const row = db.prepare(`SELECT discord_id FROM steam_links WHERE steam_id = ?`).get(String(steamId));
+    return row ? { discordId: row.discord_id } : null;
+}
+
+/**
+ * Returns { steamId } for a Discord user, or null if not linked.
+ */
+function getSteamLinkByDiscord(discordId) {
+    const row = db.prepare(`SELECT steam_id FROM steam_links WHERE discord_id = ?`).get(discordId);
+    return row ? { steamId: row.steam_id } : null;
+}
+
+/**
+ * Stores or updates the Steam ID → Discord ID link.
+ */
+function setSteamLink(steamId, discordId) {
+    db.prepare(`
+        INSERT INTO steam_links (steam_id, discord_id, linked_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(steam_id) DO UPDATE SET
+            discord_id = excluded.discord_id,
+            linked_at  = excluded.linked_at
+    `).run(String(steamId), discordId, Date.now());
 }
 
 // ===============================
@@ -463,6 +505,9 @@ function clearAllCrewVCs(guildId) {
 // ===============================
 
 module.exports = {
+    getSteamLink,
+    getSteamLinkByDiscord,
+    setSteamLink,
     getAllCrew,
     getCrewByUserId,
     getCrewRaw,

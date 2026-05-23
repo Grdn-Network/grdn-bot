@@ -33,6 +33,60 @@ module.exports = function startServer(client) {
     const PORT   = process.env.HTTP_PORT   || 3000;
     const SECRET = process.env.HTTP_SECRET || '';
 
+    // ── Steam link prompt dedup ───────────────────────────────────────────────
+    // Prevents re-posting the "Is this you?" embed for the same Steam ID within
+    // 5 minutes (e.g. if the player boards multiple locos before clicking).
+    const pendingLinkPrompts = new Map(); // steamId → timestamp (ms)
+    const LINK_PROMPT_COOLDOWN = 5 * 60 * 1000;
+
+    async function postLinkPrompt(guild, steamId, steamName, trainNumber, locoType) {
+        const now = Date.now();
+        if (pendingLinkPrompts.has(steamId) &&
+            now - pendingLinkPrompts.get(steamId) < LINK_PROMPT_COOLDOWN) return;
+        pendingLinkPrompts.set(steamId, now);
+
+        const channelId = process.env.STEAM_LINK_CHANNEL_ID;
+        if (!channelId) {
+            console.log(`[SteamLink] Unlinked Steam ${steamId} (${steamName}) — set STEAM_LINK_CHANNEL_ID in .env to enable auto-prompts`);
+            return;
+        }
+        const channel = guild.channels.cache.get(channelId);
+        if (!channel) { console.warn(`[SteamLink] Channel ${channelId} not found in guild`); return; }
+
+        const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+
+        const embed = new EmbedBuilder()
+            .setTitle('🔗 Unlinked player in-game')
+            .setColor(0xF0A500)
+            .setDescription(
+                'A player just boarded their loco but hasn\'t linked their Discord account yet.\n\n' +
+                '**If this is you, click the button below — you\'ll never need to again.**'
+            )
+            .addFields(
+                { name: 'Steam Name', value: steamName || 'Unknown', inline: true },
+                { name: 'Train',      value: trainNumber || '?',     inline: true },
+                { name: 'Loco',       value: locoType    || '?',     inline: true },
+            )
+            .setTimestamp();
+
+        // Encode train + loco in the button ID so the handler has it at click time.
+        // Strip colons (our delimiter) from values as a safety measure — none of these
+        // fields should ever contain one, but better safe than a broken split.
+        const safeId    = steamId.replace(/:/g, '');
+        const safeTrain = (trainNumber || '').replace(/:/g, '');
+        const safeLoco  = (locoType    || '').replace(/:/g, '');
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`linksteam:${safeId}:${safeTrain}:${safeLoco}`)
+                .setLabel('✅  Yes, that\'s me')
+                .setStyle(ButtonStyle.Success)
+        );
+
+        await channel.send({ embeds: [embed], components: [row] });
+        console.log(`[SteamLink] Posted link prompt for Steam ${steamId} (${steamName})`);
+    }
+
     app.use(express.json());
 
     // ── Auth middleware ───────────────────────────────────────────────────────
@@ -136,57 +190,101 @@ module.exports = function startServer(client) {
     });
 
     // ── POST /update-crew ─────────────────────────────────────────────────────
-    // Body: { fromTrainNumber: string, toTrainNumber: string, locoType?: string }
+    // Body: { fromTrainNumber, toTrainNumber, locoType?, steamId?, steamName? }
     //
     // Called by the in-game GRDN Crew CommsRadio mode when a player boards a loco.
-    // Finds the crew member registered to fromTrainNumber, moves them to toTrainNumber,
-    // and updates their loco_type if provided.
-    // After the DB write: refreshes the train board + syncs their Discord nickname.
+    // Resolution order:
+    //   1. steamId provided + linked → update by Discord user ID (most accurate)
+    //   2. steamId provided + NOT linked → post "Is this you?" prompt, fall through
+    //   3. fromTrainNumber lookup (original behaviour — always the final fallback)
     app.post('/update-crew', async (req, res) => {
-        const { fromTrainNumber, toTrainNumber, locoType } = req.body ?? {};
+        const { fromTrainNumber, toTrainNumber, locoType, steamId, steamName } = req.body ?? {};
         if (!fromTrainNumber || !toTrainNumber) {
             return res.status(400).json({ error: 'Missing fromTrainNumber or toTrainNumber' });
         }
 
         let updatedRow;
-        try {
-            // LIMIT 1 via rowid subquery — for multi-crew trains, only the most recently
-            // registered person is moved. Avoids clobbering both registrations when one
-            // of a two-person crew switches locos mid-op.
-            const result = db.prepare(`
-                UPDATE registrations
-                SET train_number = ?,
-                    loco_type    = CASE WHEN ? IS NOT NULL THEN ? ELSE loco_type END
-                WHERE rowid IN (
-                    SELECT rowid FROM registrations
-                    WHERE train_number = ? AND active = 1
-                    ORDER BY rowid DESC
-                    LIMIT 1
-                )
-            `).run(toTrainNumber, locoType ?? null, locoType ?? null, fromTrainNumber);
+        let resolvedByLink = false;
 
-            if (result.changes === 0) {
-                console.log(`[CrewUpdate] No crew found for train ${fromTrainNumber}`);
-                return res.status(404).json({ ok: false, error: 'No crew found for fromTrainNumber' });
+        // ── 1. Steam link resolution ──────────────────────────────────────────
+        if (steamId) {
+            const link = storage.getSteamLink(String(steamId));
+
+            if (link) {
+                // Linked — update directly by Discord user ID
+                try {
+                    const result = db.prepare(`
+                        UPDATE registrations
+                        SET train_number = ?,
+                            loco_type    = CASE WHEN ? IS NOT NULL THEN ? ELSE loco_type END
+                        WHERE user_id = ? AND active = 1
+                    `).run(toTrainNumber, locoType ?? null, locoType ?? null, link.discordId);
+
+                    if (result.changes > 0) {
+                        resolvedByLink = true;
+                        updatedRow = db.prepare(`
+                            SELECT user_id, type, train_number, loco_type, preferred_name
+                            FROM registrations WHERE user_id = ? AND active = 1
+                        `).get(link.discordId);
+                        const locoTag = locoType ? ` [${locoType}]` : '';
+                        console.log(`[CrewUpdate] Steam-linked: ${fromTrainNumber} → ${toTrainNumber}${locoTag} (${link.discordId})`);
+                    }
+                } catch (err) {
+                    console.error('[CrewUpdate] Steam-link update error:', err.message);
+                }
+            } else {
+                // Not linked — fire the "Is this you?" prompt in all guilds
+                for (const [, guild] of client.guilds.cache) {
+                    postLinkPrompt(guild, String(steamId), steamName || 'Unknown', toTrainNumber, locoType)
+                        .catch(err => console.error('[SteamLink] postLinkPrompt error:', err.message));
+                }
             }
-
-            const locoTag = locoType ? ` [${locoType}]` : '';
-            console.log(`[CrewUpdate] ${fromTrainNumber} → ${toTrainNumber}${locoTag}`);
-
-            // Fetch the updated row so we can sync nickname + trainboard
-            updatedRow = db.prepare(`
-                SELECT user_id, type, train_number, loco_type, preferred_name
-                FROM registrations
-                WHERE train_number = ? AND active = 1
-                ORDER BY rowid DESC LIMIT 1
-            `).get(toTrainNumber);
-
-            res.json({ ok: true, updated: result.changes });
-
-        } catch (err) {
-            console.error('[CrewUpdate] Error:', err.message);
-            return res.status(500).json({ ok: false, error: 'Internal error' });
         }
+
+        // ── 2. Fallback: fromTrainNumber lookup ───────────────────────────────
+        if (!resolvedByLink) {
+            try {
+                // LIMIT 1 via rowid subquery — for multi-crew trains, only the most recently
+                // registered person is moved. Avoids clobbering both registrations when one
+                // of a two-person crew switches locos mid-op.
+                const result = db.prepare(`
+                    UPDATE registrations
+                    SET train_number = ?,
+                        loco_type    = CASE WHEN ? IS NOT NULL THEN ? ELSE loco_type END
+                    WHERE rowid IN (
+                        SELECT rowid FROM registrations
+                        WHERE train_number = ? AND active = 1
+                        ORDER BY rowid DESC
+                        LIMIT 1
+                    )
+                `).run(toTrainNumber, locoType ?? null, locoType ?? null, fromTrainNumber);
+
+                if (result.changes === 0) {
+                    // If we already posted a link prompt, return 200 — the game doesn't need
+                    // to know the fromTrain lookup failed (it'll work once they link).
+                    if (steamId) {
+                        return res.json({ ok: true, updated: 0, note: 'Steam ID not linked yet' });
+                    }
+                    console.log(`[CrewUpdate] No crew found for train ${fromTrainNumber}`);
+                    return res.status(404).json({ ok: false, error: 'No crew found for fromTrainNumber' });
+                }
+
+                updatedRow = db.prepare(`
+                    SELECT user_id, type, train_number, loco_type, preferred_name
+                    FROM registrations
+                    WHERE train_number = ? AND active = 1
+                    ORDER BY rowid DESC LIMIT 1
+                `).get(toTrainNumber);
+
+            } catch (err) {
+                console.error('[CrewUpdate] Error:', err.message);
+                return res.status(500).json({ ok: false, error: 'Internal error' });
+            }
+        }
+
+        const locoTag = locoType ? ` [${locoType}]` : '';
+        console.log(`[CrewUpdate] ${fromTrainNumber} → ${toTrainNumber}${locoTag}`);
+        res.json({ ok: true });
 
         // ── Post-response: sync nickname, crew VC name, and train board ────────
         // These run after the HTTP response is sent — failures are non-fatal.
