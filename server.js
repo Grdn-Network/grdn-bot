@@ -245,48 +245,91 @@ module.exports = function startServer(client) {
     });
 
     // ── POST /update-crew ─────────────────────────────────────────────────────
-    // Body: { fromTrainNumber, toTrainNumber, locoType?, steamId?, steamName? }
+    // Body: { fromTrainNumber?, toTrainNumber, locoType?, steamId?, steamName? }
     //
     // Called by the in-game GRDN Crew CommsRadio mode when a player boards a loco.
     // Resolution order:
-    //   1. steamId provided + linked → update by Discord user ID (most accurate)
-    //   2. steamId provided + NOT linked → post "Is this you?" prompt, fall through
-    //   3. fromTrainNumber lookup (original behaviour — always the final fallback)
+    //   1. steamId linked + existing crew record → update train number by discordId
+    //   2. steamId linked + NO crew record + player in crew VC → auto-register them
+    //      (sends a DM to confirm — zero commands needed for first-time setup)
+    //   3. steamId provided + NOT linked → post "Is this you?" prompt, fall through
+    //   4. fromTrainNumber lookup (original behaviour — final fallback)
+    //
+    // fromTrainNumber is optional when steamId resolves the player directly.
     app.post('/update-crew', async (req, res) => {
         const { fromTrainNumber, toTrainNumber, locoType, steamId, steamName } = req.body ?? {};
-        if (!fromTrainNumber || !toTrainNumber) {
-            return res.status(400).json({ error: 'Missing fromTrainNumber or toTrainNumber' });
+        if (!toTrainNumber) {
+            return res.status(400).json({ error: 'Missing toTrainNumber' });
         }
 
         let updatedRow;
-        let resolvedByLink = false;
+        let resolvedByLink  = false;
+        let autoRegistered  = false;  // true only when we created a brand-new crew record
+        let autoMember      = null;   // resolved Discord member, used for DM after res.json
 
-        // ── 1. Steam link resolution ──────────────────────────────────────────
+        // ── 1 & 2. Steam link resolution ─────────────────────────────────────
         if (steamId) {
             const link = storage.getSteamLink(String(steamId));
 
             if (link) {
-                // Linked — update directly by Discord user ID
                 try {
-                    const result = db.prepare(`
-                        UPDATE registrations
-                        SET train_number = ?,
-                            loco_type    = CASE WHEN ? IS NOT NULL THEN ? ELSE loco_type END
-                        WHERE user_id = ? AND active = 1
-                    `).run(toTrainNumber, locoType ?? null, locoType ?? null, link.discordId);
+                    // Check for existing active registration first
+                    const existing = db.prepare(`
+                        SELECT user_id, type, train_number, loco_type, preferred_name
+                        FROM registrations WHERE user_id = ? AND active = 1
+                    `).get(link.discordId);
 
-                    if (result.changes > 0) {
+                    if (existing) {
+                        // ── 1. Already registered — update train/loco only ────
+                        db.prepare(`
+                            UPDATE registrations
+                            SET train_number = ?,
+                                loco_type    = CASE WHEN ? IS NOT NULL THEN ? ELSE loco_type END
+                            WHERE user_id = ? AND active = 1
+                        `).run(toTrainNumber, locoType ?? null, locoType ?? null, link.discordId);
+
                         resolvedByLink = true;
                         updatedRow = db.prepare(`
                             SELECT user_id, type, train_number, loco_type, preferred_name
                             FROM registrations WHERE user_id = ? AND active = 1
                         `).get(link.discordId);
+
                         const locoTag = locoType ? ` [${locoType}]` : '';
-                        console.log(`[CrewUpdate] Steam-linked: ${fromTrainNumber} → ${toTrainNumber}${locoTag} (${link.discordId})`);
+                        console.log(`[CrewUpdate] Steam-linked update: ${existing.train_number || '?'} → ${toTrainNumber}${locoTag} (${link.discordId})`);
+
+                    } else {
+                        // ── 2. No record yet — auto-register if in crew VC ────
+                        for (const [, guild] of client.guilds.cache) {
+                            const member = await guild.members.fetch(link.discordId).catch(() => null);
+                            if (!member) continue;
+
+                            if (member.voice?.channel?.parentId !== CREW_VC_CATEGORY_ID) {
+                                console.log(`[CrewUpdate] ${member.displayName}: not in crew VC — skipping auto-register`);
+                                continue;
+                            }
+
+                            storage.upsertCrew(link.discordId, 'Crew', toTrainNumber, member.displayName, locoType ?? null);
+                            resolvedByLink = true;
+                            autoRegistered = true;
+                            autoMember     = member;
+
+                            updatedRow = db.prepare(`
+                                SELECT user_id, type, train_number, loco_type, preferred_name
+                                FROM registrations WHERE user_id = ? AND active = 1
+                            `).get(link.discordId);
+
+                            const locoTag = locoType ? ` [${locoType}]` : '';
+                            console.log(`[CrewUpdate] Auto-registered: ${member.displayName} → Train ${toTrainNumber}${locoTag}`);
+                            break; // one guild is enough
+                        }
+
+                        if (!resolvedByLink)
+                            console.log(`[CrewUpdate] Steam ${steamId}: linked but not in crew VC — skipped auto-register`);
                     }
                 } catch (err) {
-                    console.error('[CrewUpdate] Steam-link update error:', err.message);
+                    console.error('[CrewUpdate] Steam-link resolution error:', err.message);
                 }
+
             } else {
                 // Not linked — fire the "Is this you?" prompt in all guilds
                 for (const [, guild] of client.guilds.cache) {
@@ -296,8 +339,14 @@ module.exports = function startServer(client) {
             }
         }
 
-        // ── 2. Fallback: fromTrainNumber lookup ───────────────────────────────
+        // ── 3. Fallback: fromTrainNumber lookup ───────────────────────────────
         if (!resolvedByLink) {
+            if (!fromTrainNumber) {
+                // steamId was provided but didn't resolve (unlinked / not in VC) — that's ok
+                if (steamId) return res.json({ ok: true, updated: 0, note: 'Steam ID not linked yet' });
+                return res.status(400).json({ error: 'Missing fromTrainNumber' });
+            }
+
             try {
                 // LIMIT 1 via rowid subquery — for multi-crew trains, only the most recently
                 // registered person is moved. Avoids clobbering both registrations when one
@@ -315,8 +364,6 @@ module.exports = function startServer(client) {
                 `).run(toTrainNumber, locoType ?? null, locoType ?? null, fromTrainNumber);
 
                 if (result.changes === 0) {
-                    // If we already posted a link prompt, return 200 — the game doesn't need
-                    // to know the fromTrain lookup failed (it'll work once they link).
                     if (steamId) {
                         return res.json({ ok: true, updated: 0, note: 'Steam ID not linked yet' });
                     }
@@ -338,8 +385,18 @@ module.exports = function startServer(client) {
         }
 
         const locoTag = locoType ? ` [${locoType}]` : '';
-        console.log(`[CrewUpdate] ${fromTrainNumber} → ${toTrainNumber}${locoTag}`);
+        console.log(`[CrewUpdate] ${fromTrainNumber || '?'} → ${toTrainNumber}${locoTag}`);
         res.json({ ok: true });
+
+        // ── DM confirmation — only on first-time auto-registration ───────────
+        // Runs after the HTTP response so the game isn't waiting on it.
+        if (autoRegistered && autoMember) {
+            const locoLabel = locoType ? ` (${locoType})` : '';
+            autoMember.send(
+                `✅ **Auto-assigned — Train ${toTrainNumber}${locoLabel}**\n` +
+                `You've been added to the ops board. Use \`/assign\` to set your route info.`
+            ).catch(() => {}); // silently skip if DMs are closed
+        }
 
         // ── Post-response: sync nickname, crew VC name, and train board ────────
         // These run after the HTTP response is sent — failures are non-fatal.
