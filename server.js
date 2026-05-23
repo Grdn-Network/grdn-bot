@@ -56,17 +56,29 @@ module.exports = function startServer(client) {
 
         try {
             for (const [, guild] of client.guilds.cache) {
-                const crew = storage.getAllCrew(guild.id)
-                    .filter(c => String(c.trainNumber) === String(trainNumber));
+                const allCrew = storage.getAllCrew(guild.id);
+                const crew = allCrew.filter(c => String(c.trainNumber) === String(trainNumber));
+
+                console.log(`[Radio] Train ${trainNumber} → vcId=${vcId} | ${crew.length}/${allCrew.length} crew matched`);
 
                 for (const c of crew) {
                     const member = await guild.members.fetch(c.userId).catch(() => null);
-                    if (!member?.voice?.channel) continue;
-                    if (member.voice.channel.id === vcId) continue;
+                    if (!member) {
+                        console.log(`[Radio] ${c.preferredName} (${c.userId}): not found in guild`);
+                        continue;
+                    }
+                    if (!member.voice?.channel) {
+                        console.log(`[Radio] ${c.preferredName}: not in a voice channel — skipped`);
+                        continue;
+                    }
+                    if (member.voice.channel.id === vcId) {
+                        console.log(`[Radio] ${c.preferredName}: already in target channel — skipped`);
+                        continue;
+                    }
                     await member.voice.setChannel(vcId).catch(err =>
                         console.error(`[Radio] Failed to move ${c.userId}:`, err.message)
                     );
-                    console.log(`[Radio] Moved ${c.userId} (train ${trainNumber}) → ${vcId}`);
+                    console.log(`[Radio] Moved ${c.preferredName} (train ${trainNumber}) → ${vcId}`);
                 }
             }
         } catch (err) {
