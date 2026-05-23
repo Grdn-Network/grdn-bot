@@ -126,21 +126,96 @@ function buildClipSequence(trainNumber, defectType, detail = null) {
     }
 }
 
+// ── Pure-JS WAV concat ────────────────────────────────────────────────────────
+// Scans RIFF chunks to extract fmt + data, verifies all clips share the same
+// format, then concatenates data sections with a single new header.
+// No process spawn, no temp files — typically completes in < 5 ms.
+
+function parseWav(buf) {
+    if (buf.toString('ascii', 0, 4) !== 'RIFF' ||
+        buf.toString('ascii', 8, 12) !== 'WAVE') {
+        throw new Error('Not a valid WAV file');
+    }
+    let pos = 12, fmt = null, dataOffset = -1, dataSize = -1;
+    while (pos < buf.length - 8) {
+        const id   = buf.toString('ascii', pos, pos + 4);
+        const size = buf.readUInt32LE(pos + 4);
+        if (id === 'fmt ') {
+            fmt = {
+                audioFormat:   buf.readUInt16LE(pos + 8),
+                numChannels:   buf.readUInt16LE(pos + 10),
+                sampleRate:    buf.readUInt32LE(pos + 12),
+                byteRate:      buf.readUInt32LE(pos + 16),
+                blockAlign:    buf.readUInt16LE(pos + 20),
+                bitsPerSample: buf.readUInt16LE(pos + 22),
+            };
+        } else if (id === 'data') {
+            dataOffset = pos + 8;
+            dataSize   = size;
+            break;
+        }
+        pos += 8 + size + (size & 1); // RIFF chunks are word-aligned
+    }
+    if (!fmt)            throw new Error('WAV has no fmt chunk');
+    if (dataOffset < 0)  throw new Error('WAV has no data chunk');
+    return { fmt, data: buf.slice(dataOffset, dataOffset + dataSize) };
+}
+
+function buildWavHeader(fmt, dataSize) {
+    const h = Buffer.alloc(44);
+    h.write('RIFF',  0, 'ascii');  h.writeUInt32LE(36 + dataSize,    4);
+    h.write('WAVE',  8, 'ascii');
+    h.write('fmt ', 12, 'ascii');  h.writeUInt32LE(16,               16);
+    h.writeUInt16LE(fmt.audioFormat,    20);
+    h.writeUInt16LE(fmt.numChannels,    22);
+    h.writeUInt32LE(fmt.sampleRate,     24);
+    h.writeUInt32LE(fmt.byteRate,       28);
+    h.writeUInt16LE(fmt.blockAlign,     32);
+    h.writeUInt16LE(fmt.bitsPerSample,  34);
+    h.write('data', 36, 'ascii');  h.writeUInt32LE(dataSize,         40);
+    return h;
+}
+
+function concatWavs(buffers) {
+    const parsed = buffers.map(parseWav);
+    const ref    = parsed[0].fmt;
+    for (const { fmt } of parsed) {
+        if (fmt.audioFormat   !== ref.audioFormat   ||
+            fmt.numChannels   !== ref.numChannels   ||
+            fmt.sampleRate    !== ref.sampleRate    ||
+            fmt.bitsPerSample !== ref.bitsPerSample) {
+            throw new Error('Clip format mismatch — cannot fast-concat');
+        }
+    }
+    const chunks    = parsed.map(p => p.data);
+    const totalSize = chunks.reduce((s, c) => s + c.length, 0);
+    return Buffer.concat([buildWavHeader(ref, totalSize), ...chunks]);
+}
+
 // ── Audio stitcher ────────────────────────────────────────────────────────────
-// Concatenates clip WAVs via ffmpeg filter_complex and returns a WAV buffer.
+// Fast path: pure-JS WAV concat (no process spawn).
+// Fallback: ffmpeg filter_complex concat (handles format differences).
 
 async function stitchClips(clipNames) {
-    // Verify all clips exist before handing off to ffmpeg
+    // Verify all clips exist upfront
     const missing = clipNames.filter(n => !fs.existsSync(path.join(CLIPS_DIR, `${n}.wav`)));
     if (missing.length > 0) {
         throw new Error(`[VoiceAlert] Missing clips: ${missing.map(n => n + '.wav').join(', ')}`);
     }
 
-    // Single-clip shortcut — skip ffmpeg overhead
-    if (clipNames.length === 1) {
-        return fs.readFileSync(path.join(CLIPS_DIR, `${clipNames[0]}.wav`));
+    const buffers = clipNames.map(n => fs.readFileSync(path.join(CLIPS_DIR, `${n}.wav`)));
+
+    // Single-clip shortcut
+    if (buffers.length === 1) return buffers[0];
+
+    // Fast path — pure JS, no ffmpeg spawn
+    try {
+        return concatWavs(buffers);
+    } catch (e) {
+        console.warn('[VoiceAlert] Fast WAV concat failed, falling back to ffmpeg:', e.message);
     }
 
+    // Slow path — ffmpeg (handles clips with different sample rates / formats)
     // Write to a temp file instead of piping to stdout — avoids Windows pipe issues.
     const tmpFile = path.join(os.tmpdir(), `grdn_${crypto.randomBytes(8).toString('hex')}.wav`);
 
@@ -153,7 +228,7 @@ async function stitchClips(clipNames) {
             ...inputs,
             '-filter_complex', filterStr,
             '-map', '[out]',
-            '-y',       // overwrite if exists
+            '-y',
             tmpFile,
         ], (err, stdout, stderr) => {
             if (err) {
@@ -168,7 +243,7 @@ async function stitchClips(clipNames) {
             }
             try {
                 const buf = fs.readFileSync(tmpFile);
-                fs.unlink(tmpFile, () => {}); // cleanup async, don't wait
+                fs.unlink(tmpFile, () => {});
                 resolve(buf);
             } catch (readErr) {
                 reject(new Error(`[VoiceAlert] temp file read failed: ${readErr.message}`));
@@ -202,6 +277,10 @@ async function playInChannel(voiceChannel, clipNames) {
     connection.on('debug',  (msg) => debugLog.push(msg));
     connection.on('error',  (err) => debugLog.push(`[error] ${err.message}`));
 
+    // Kick off clip stitching immediately — runs in parallel with VC setup.
+    // By the time the voice connection is Ready the audio is almost always done.
+    const stitchPromise = stitchClips(clipNames);
+
     try {
         // Step 1 — wait for voice connection to be ready
         await entersState(connection, VoiceConnectionStatus.Ready, CONNECT_TIMEOUT_MS)
@@ -214,8 +293,9 @@ async function playInChannel(voiceChannel, clipNames) {
                 );
             });
 
-        // Step 2 — stitch clips with ffmpeg
-        const audioBuffer = await stitchClips(clipNames);
+        // Step 2 — clips are stitched in parallel; await the result here
+        const audioBuffer = await stitchPromise
+            .catch(err => { throw new Error(`STEP2_STITCH: ${err.message}`); });
 
         // Step 3 — create audio resource and player
         const player   = createAudioPlayer();
