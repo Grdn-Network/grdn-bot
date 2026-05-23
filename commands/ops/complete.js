@@ -1,18 +1,17 @@
 // commands/ops/complete.js
-// /complete jobid: — complete a Derail Valley job via GRDNConnect. Staff only.
+// /complete jobid: — complete a Derail Valley job via GRDNConnect.
+// Available to all crew. Failures are shown only to the user who ran the command.
 
 const { SlashCommandBuilder } = require('discord.js');
 const fetch   = require('node-fetch');
 const storage = require('../../database/storage');
-const { hasAnyRole } = require('../../utils/permissions');
-const { STAFF_ROLES } = require('../../config');
 
 const FETCH_TIMEOUT_MS = 5000;
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('complete')
-        .setDescription('Complete a Derail Valley job by job ID. (Staff only)')
+        .setDescription('Complete a Derail Valley job by job ID.')
         .addStringOption(opt =>
             opt.setName('jobid')
                .setDescription('Job ID to complete (e.g. HB-SU-27)')
@@ -20,10 +19,6 @@ module.exports = {
         ),
 
     async execute(interaction) {
-        if (!hasAnyRole(interaction.member, STAFF_ROLES)) {
-            return interaction.reply({ content: '❌ You do not have permission to use this command.', flags: 64 });
-        }
-
         const baseUrl = storage.getDvBaseUrl();
         if (!baseUrl)
             return interaction.reply({
@@ -32,7 +27,14 @@ module.exports = {
             });
 
         const jobId = interaction.options.getString('jobid');
-        await interaction.deferReply();
+
+        // Defer ephemeral — failures stay hidden. Success deletes this and sends a
+        // public follow-up so the channel sees the completed job.
+        await interaction.deferReply({ ephemeral: true });
+
+        const fail = async (msg) => {
+            return interaction.editReply(msg);          // ephemeral — only visible to caller
+        };
 
         try {
             const response = await fetch(`${baseUrl}/complete-job`, {
@@ -46,18 +48,20 @@ module.exports = {
             try { result = await response.json(); } catch { result = null; }
 
             if (!result)
-                return interaction.editReply('⚠️ The Derail Valley mod returned an unexpected response. Is the game running?');
+                return fail('⚠️ The Derail Valley mod returned an unexpected response. Is the game running?');
 
             if (result.ok) {
-                return interaction.editReply(`✅ Job **${jobId}** completed. The crew will receive payment in-game.`);
+                // Delete the ephemeral defer, then post a public success message.
+                await interaction.deleteReply();
+                return interaction.followUp(`✅ Job **${jobId}** completed. The crew will receive payment in-game.`);
             } else if (response.status === 404) {
-                return interaction.editReply(`⚠️ Job **${jobId}** could not be completed — not finished yet or not found.`);
+                return fail(`⚠️ Job **${jobId}** could not be completed — not finished yet or not found.`);
             } else {
-                return interaction.editReply(`❌ Could not complete **${jobId}**: ${result.error ?? 'Unknown error'}`);
+                return fail(`❌ Could not complete **${jobId}**: ${result.error ?? 'Unknown error'}`);
             }
         } catch (err) {
             console.error('[GRDNConnect] complete-job error:', err);
-            return interaction.editReply('⚠️ Could not reach the Derail Valley mod. Is the game running and the mod enabled?');
+            return fail('⚠️ Could not reach the Derail Valley mod. Is the game running and the mod enabled?');
         }
     },
 };
