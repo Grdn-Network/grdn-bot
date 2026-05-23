@@ -189,16 +189,26 @@ async function playInChannel(voiceChannel, clipNames) {
     });
 
     try {
-        await entersState(connection, VoiceConnectionStatus.Ready, CONNECT_TIMEOUT_MS);
+        // Step 1 — wait for voice connection to be ready
+        await entersState(connection, VoiceConnectionStatus.Ready, CONNECT_TIMEOUT_MS)
+            .catch(err => { throw new Error(`STEP1_CONNECT: ${err.message}`); });
 
+        // Step 2 — stitch clips with ffmpeg
         const audioBuffer = await stitchClips(clipNames);
-        const player      = createAudioPlayer();
-        const resource    = createAudioResource(Readable.from(audioBuffer));
+
+        // Step 3 — create audio resource and player
+        const player   = createAudioPlayer();
+        const resource = createAudioResource(Readable.from(audioBuffer));
+
+        player.on('error', err => console.error('[VoiceAlert] Player error:', err.message, err.resource?.metadata));
 
         connection.subscribe(player);
         player.play(resource);
 
-        await entersState(player, AudioPlayerStatus.Idle, PLAYBACK_TIMEOUT_MS);
+        // Step 4 — wait for playback to finish
+        await entersState(player, AudioPlayerStatus.Idle, PLAYBACK_TIMEOUT_MS)
+            .catch(err => { throw new Error(`STEP4_PLAYBACK: ${err.message}`); });
+
     } finally {
         connection.destroy();
     }
