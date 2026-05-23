@@ -130,12 +130,37 @@ async function handleStart(interaction) {
     const now = Date.now();
     storage.openSession(interaction.guild.id, interaction.user.id, now, 'official');
 
-    // Push bot URL + secret to GRDNConnect so the mod never needs manual config.
+    // ── Resolve this host's Cloudflare tunnel ─────────────────────────────────
+    // host-tunnels.json: { "discordUserId": "tunnelName", ... }
+    // "grdn" → Remote Dispatch link: https://grdn.grdnnetwork.com
+    //        → GRDNConnect URL:      https://grdn-connect.grdnnetwork.com
+    // Falls back to DV_HOST:DV_PORT from config if host isn't in the file.
+    let connectUrl = `http://${DV_HOST}:${DV_PORT}`;
+    try {
+        const hostTunnels = require('../../host-tunnels.json');
+        const tunnelName  = hostTunnels[interaction.user.id];
+        if (tunnelName) {
+            const rdLink = `https://${tunnelName}.grdnnetwork.com`;
+            db.prepare(`
+                INSERT OR IGNORE INTO dispatch_settings
+                    (id, server_name, server_password, remote_link, remote_password)
+                VALUES (1, 'Not set', 'Not set', 'Not set', 'Not set')
+            `).run();
+            db.prepare(`UPDATE dispatch_settings SET remote_link = ? WHERE id = 1`).run(rdLink);
+            connectUrl = deriveDvConnectUrl(rdLink) ?? connectUrl;
+            console.log(`[Session] Host tunnel: ${tunnelName} → ${connectUrl}`);
+        }
+    } catch (err) {
+        console.warn('[Session] host-tunnels.json lookup failed:', err.message);
+    }
+
+    // ── Push bot URL + secret to GRDNConnect ─────────────────────────────────
+    // Uses the tunnel URL if resolved above, direct IP if not.
     // Fire-and-forget — don't let game-unreachable block the Discord response.
     const botPublicUrl = process.env.BOT_PUBLIC_URL || '';
     const botSecret    = process.env.HTTP_SECRET    || '';
     if (botPublicUrl) {
-        fetch(`http://${DV_HOST}:${DV_PORT}/session-config`, {
+        fetch(`${connectUrl}/session-config`, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({ botUrl: botPublicUrl, secret: botSecret }),
