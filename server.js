@@ -16,6 +16,9 @@ const express = require('express');
 const storage = require('./database/storage');
 const db      = require('./database/db');
 const { getCrewVCByChannel } = storage;
+const { buildNickname }   = require('./utils/nickname');
+const { updateTrainBoard } = require('./utils/trainBoard');
+const { TRAIN_BOARD_CHANNEL_ID } = require('./config');
 
 // voiceAlert is optional — gracefully absent if @discordjs/voice isn't installed
 let alertTrain, alertChannel;
@@ -121,50 +124,81 @@ module.exports = function startServer(client) {
     });
 
     // ── POST /update-crew ─────────────────────────────────────────────────────
-    // Body: { fromTrainNumber: string, toTrainNumber: string }
+    // Body: { fromTrainNumber: string, toTrainNumber: string, locoType?: string }
     //
-    // Called by the in-game GRDN Crew CommsRadio mode when a player selects
-    // a different loco mid-op. Finds the crew member registered to fromTrainNumber
-    // and re-assigns them to toTrainNumber.
+    // Called by the in-game GRDN Crew CommsRadio mode when a player boards a loco.
+    // Finds the crew member registered to fromTrainNumber, moves them to toTrainNumber,
+    // and updates their loco_type if provided.
+    // After the DB write: refreshes the train board + syncs their Discord nickname.
     app.post('/update-crew', async (req, res) => {
-        const { fromTrainNumber, toTrainNumber } = req.body ?? {};
+        const { fromTrainNumber, toTrainNumber, locoType } = req.body ?? {};
         if (!fromTrainNumber || !toTrainNumber) {
             return res.status(400).json({ error: 'Missing fromTrainNumber or toTrainNumber' });
         }
 
+        let updatedRow;
         try {
-            // LIMIT 1 via rowid subquery — for multi-crew trains, only the
-            // most recently registered person is moved. The other crew member
-            // stays on the original train. This avoids clobbering both registrations
-            // when one of a two-person crew switches locos mid-op.
+            // LIMIT 1 via rowid subquery — for multi-crew trains, only the most recently
+            // registered person is moved. Avoids clobbering both registrations when one
+            // of a two-person crew switches locos mid-op.
             const result = db.prepare(`
                 UPDATE registrations
-                SET train_number = ?
+                SET train_number = ?,
+                    loco_type    = CASE WHEN ? IS NOT NULL THEN ? ELSE loco_type END
                 WHERE rowid IN (
                     SELECT rowid FROM registrations
                     WHERE train_number = ? AND active = 1
                     ORDER BY rowid DESC
                     LIMIT 1
                 )
-            `).run(toTrainNumber, fromTrainNumber);
+            `).run(toTrainNumber, locoType ?? null, locoType ?? null, fromTrainNumber);
 
             if (result.changes === 0) {
                 console.log(`[CrewUpdate] No crew found for train ${fromTrainNumber}`);
                 return res.status(404).json({ ok: false, error: 'No crew found for fromTrainNumber' });
             }
 
-            console.log(`[CrewUpdate] Moved ${result.changes} crew member(s): ${fromTrainNumber} → ${toTrainNumber}`);
+            const locoTag = locoType ? ` [${locoType}]` : '';
+            console.log(`[CrewUpdate] ${fromTrainNumber} → ${toTrainNumber}${locoTag}`);
 
-            // Rename crew VC if they're in one
-            try {
-                for (const [, guild] of client.guilds.cache) {
-                    const crew = storage.getAllCrew(guild.id)
-                        .filter(c => String(c.trainNumber) === String(toTrainNumber));
+            // Fetch the updated row so we can sync nickname + trainboard
+            updatedRow = db.prepare(`
+                SELECT user_id, type, train_number, loco_type, preferred_name
+                FROM registrations
+                WHERE train_number = ? AND active = 1
+                ORDER BY rowid DESC LIMIT 1
+            `).get(toTrainNumber);
 
-                    for (const c of crew) {
-                        const member = await guild.members.fetch(c.userId).catch(() => null);
-                        if (!member?.voice?.channel) continue;
+            res.json({ ok: true, updated: result.changes });
 
+        } catch (err) {
+            console.error('[CrewUpdate] Error:', err.message);
+            return res.status(500).json({ ok: false, error: 'Internal error' });
+        }
+
+        // ── Post-response: sync nickname, crew VC name, and train board ────────
+        // These run after the HTTP response is sent — failures are non-fatal.
+        try {
+            for (const [, guild] of client.guilds.cache) {
+                const crew = storage.getAllCrew(guild.id)
+                    .filter(c => String(c.trainNumber) === String(toTrainNumber));
+
+                for (const c of crew) {
+                    const member = await guild.members.fetch(c.userId).catch(() => null);
+                    if (!member) continue;
+
+                    // Sync Discord nickname
+                    if (updatedRow) {
+                        const nick = buildNickname(
+                            updatedRow.type,
+                            updatedRow.train_number,
+                            updatedRow.preferred_name
+                        );
+                        await member.setNickname(nick).catch(() => {});
+                    }
+
+                    // Rename crew VC if they're in one
+                    if (member.voice?.channel) {
                         const vc = getCrewVCByChannel(member.voice.channel.id);
                         if (vc) {
                             await member.voice.channel
@@ -173,12 +207,19 @@ module.exports = function startServer(client) {
                         }
                     }
                 }
-            } catch { /* VC rename is best-effort */ }
-
-            return res.json({ ok: true, updated: result.changes });
+            }
         } catch (err) {
-            console.error('[CrewUpdate] Error:', err.message);
-            return res.status(500).json({ ok: false, error: 'Internal error' });
+            console.error('[CrewUpdate] Post-sync error:', err.message);
+        }
+
+        // Refresh train board if a session is active
+        try {
+            for (const [, guild] of client.guilds.cache) {
+                if (!storage.getActiveSession(guild.id)) continue;
+                await updateTrainBoard(client, guild.id, TRAIN_BOARD_CHANNEL_ID);
+            }
+        } catch (err) {
+            console.error('[CrewUpdate] TrainBoard refresh failed:', err.message);
         }
     });
 
