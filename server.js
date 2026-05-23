@@ -388,14 +388,24 @@ module.exports = function startServer(client) {
         console.log(`[CrewUpdate] ${fromTrainNumber || '?'} → ${toTrainNumber}${locoTag}`);
         res.json({ ok: true });
 
-        // ── DM confirmation — only on first-time auto-registration ───────────
-        // Runs after the HTTP response so the game isn't waiting on it.
+        // ── Channel confirmation — only on first-time auto-registration ─────
+        // Posts to STEAM_LINK_CHANNEL_ID (same channel as the link prompt) so
+        // the player sees it without needing DMs open.
         if (autoRegistered && autoMember) {
-            const locoLabel = locoType ? ` (${locoType})` : '';
-            autoMember.send(
-                `✅ **Auto-assigned — Train ${toTrainNumber}${locoLabel}**\n` +
-                `You've been added to the ops board. Use \`/assign\` to set your route info.`
-            ).catch(() => {}); // silently skip if DMs are closed
+            try {
+                const channelId = process.env.STEAM_LINK_CHANNEL_ID;
+                const channel   = channelId
+                    ? autoMember.guild.channels.cache.get(channelId)
+                    : null;
+                if (channel) {
+                    const locoLabel = locoType ? ` (${locoType})` : '';
+                    await channel.send(
+                        `✅ ${autoMember} auto-assigned → Train **${toTrainNumber}**${locoLabel}`
+                    );
+                }
+            } catch (err) {
+                console.error('[CrewUpdate] Auto-register channel message error:', err.message);
+            }
         }
 
         // ── Post-response: sync nickname, crew VC name, and train board ────────
