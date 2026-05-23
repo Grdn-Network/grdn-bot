@@ -133,7 +133,10 @@ function buildClipSequence(trainNumber, defectType, detail = null) {
 
 // How much trailing audio to keep after the last non-silent sample.
 // Real detectors let each word decay naturally before the next starts.
-const TAIL_MS = 60;
+const TAIL_MS       = 35;
+// Fraction of peak amplitude treated as silence (0.01 = 1 %).
+// Raise this if clips have TTS noise floor that prevents trimming.
+const SILENCE_RATIO = 0.015;
 
 function parseWav(buf) {
     if (buf.toString('ascii', 0, 4) !== 'RIFF' ||
@@ -187,7 +190,7 @@ function trimSilence(pcm, fmt) {
     const bytesPerSample = bitsPerSample / 8;
     const blockSize      = bytesPerSample * numChannels;
     const maxAmp         = bitsPerSample === 16 ? 32767 : 127;
-    const threshold      = 0.005 * maxAmp;   // 0.5 % of peak — filters TTS pad silence
+    const threshold      = SILENCE_RATIO * maxAmp;
     const tailBytes      = Math.ceil((TAIL_MS / 1000) * sampleRate) * blockSize;
 
     const amp = (i) => {
