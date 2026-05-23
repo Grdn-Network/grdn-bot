@@ -47,6 +47,8 @@ const { Readable }  = require('stream');
 const { execFile }  = require('child_process');
 const path          = require('path');
 const fs            = require('fs');
+const os            = require('os');
+const crypto        = require('crypto');
 
 // Use bundled ffmpeg binary (ffmpeg-static) so no system PATH config is needed.
 // Falls back to 'ffmpeg' if the package is somehow absent.
@@ -139,6 +141,9 @@ async function stitchClips(clipNames) {
         return fs.readFileSync(path.join(CLIPS_DIR, `${clipNames[0]}.wav`));
     }
 
+    // Write to a temp file instead of piping to stdout — avoids Windows pipe issues.
+    const tmpFile = path.join(os.tmpdir(), `grdn_${crypto.randomBytes(8).toString('hex')}.wav`);
+
     return new Promise((resolve, reject) => {
         const inputs    = clipNames.flatMap(n => ['-i', path.join(CLIPS_DIR, `${n}.wav`)]);
         const filterStr = clipNames.map((_, i) => `[${i}:a]`).join('')
@@ -148,11 +153,20 @@ async function stitchClips(clipNames) {
             ...inputs,
             '-filter_complex', filterStr,
             '-map', '[out]',
-            '-f', 'wav',
-            'pipe:1',
-        ], { encoding: 'buffer', maxBuffer: 20 * 1024 * 1024 }, (err, stdout) => {
-            if (err) return reject(new Error(`[VoiceAlert] ffmpeg stitch failed: ${err.message}`));
-            resolve(stdout);
+            '-y',       // overwrite if exists
+            tmpFile,
+        ], (err) => {
+            if (err) {
+                fs.unlink(tmpFile, () => {});
+                return reject(new Error(`[VoiceAlert] ffmpeg stitch failed: ${err.message}`));
+            }
+            try {
+                const buf = fs.readFileSync(tmpFile);
+                fs.unlink(tmpFile, () => {}); // cleanup async, don't wait
+                resolve(buf);
+            } catch (readErr) {
+                reject(new Error(`[VoiceAlert] temp file read failed: ${readErr.message}`));
+            }
         });
     });
 }
