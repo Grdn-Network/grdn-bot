@@ -61,7 +61,7 @@ function buildDispatchComponents() {
     return [
         new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setCustomId('syncnames_btn')
+                .setCustomId('startop_btn')
                 .setLabel('Start Official Operation')
                 .setStyle(ButtonStyle.Success),
             new ButtonBuilder()

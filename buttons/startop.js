@@ -1,4 +1,4 @@
-// buttons/syncnames.js
+// buttons/startop.js
 // "Start Official Operation" button on the dispatch embed.
 // Delegates to the same handler as /session action:start.
 
@@ -7,7 +7,7 @@ const { hasAnyRole }  = require('../utils/permissions');
 const { ADMIN_ROLE, DISPATCH_QUAL_ROLE } = require('../config');
 
 module.exports = {
-    customId: 'syncnames_btn',
+    customId: 'startop_btn',
 
     async execute(interaction) {
         if (!hasAnyRole(interaction.member, [ADMIN_ROLE, DISPATCH_QUAL_ROLE])) {
