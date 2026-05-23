@@ -155,10 +155,16 @@ async function stitchClips(clipNames) {
             '-map', '[out]',
             '-y',       // overwrite if exists
             tmpFile,
-        ], (err) => {
+        ], (err, stdout, stderr) => {
             if (err) {
                 fs.unlink(tmpFile, () => {});
-                return reject(new Error(`[VoiceAlert] ffmpeg stitch failed: ${err.message}`));
+                return reject(new Error(
+                    `[VoiceAlert] ffmpeg failed\n` +
+                    `bin: ${FFMPEG_BIN}\n` +
+                    `code: ${err.code}  killed: ${err.killed}\n` +
+                    `msg: ${err.message}\n` +
+                    `stderr: ${stderr?.toString().slice(0, 500)}`
+                ));
             }
             try {
                 const buf = fs.readFileSync(tmpFile);
