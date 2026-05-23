@@ -54,10 +54,9 @@ module.exports = {
                 // Delete the ephemeral defer, then post a public success message.
                 await interaction.deleteReply();
                 return interaction.followUp(`✅ Job **${jobId}** completed. The crew will receive payment in-game.`);
-            } else if (response.status === 404) {
-                return fail(`⚠️ Job **${jobId}** could not be completed — not finished yet or not found.`);
             } else {
-                return fail(`❌ Could not complete **${jobId}**: ${result.error ?? 'Unknown error'}`);
+                const detail = result.error ? `\n> ${result.error}` : '';
+                return fail(`⚠️ Could not complete **${jobId}**.${detail}`);
             }
         } catch (err) {
             console.error('[GRDNConnect] complete-job error:', err);
