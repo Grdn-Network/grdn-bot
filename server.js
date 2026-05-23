@@ -18,7 +18,8 @@ const db      = require('./database/db');
 const { getCrewVCByChannel } = storage;
 const { buildNickname }   = require('./utils/nickname');
 const { updateTrainBoard } = require('./utils/trainBoard');
-const { TRAIN_BOARD_CHANNEL_ID } = require('./config');
+const { ChannelType } = require('discord.js');
+const { TRAIN_BOARD_CHANNEL_ID, CREW_VC_CATEGORY_ID } = require('./config');
 
 // voiceAlert is optional — gracefully absent if @discordjs/voice isn't installed
 let alertTrain, alertChannel;
@@ -99,19 +100,51 @@ module.exports = function startServer(client) {
     });
 
     // ── POST /radio-change ────────────────────────────────────────────────────
-    // Body: { trainNumber: string, vcId: string }
-    // Looks up crew registered to trainNumber and moves them to the target VC.
+    // Body: { vcId, steamId?, trainNumber? }
+    //
+    // Resolution order:
+    //   1. steamId linked → move that Discord user directly (most accurate,
+    //      works even when the player is not in a loco)
+    //   2. trainNumber → fall back to the existing crew-lookup by train number
+    //
+    // The player does NOT need to be in a loco to switch their own VC.
     app.post('/radio-change', async (req, res) => {
-        const { trainNumber, vcId } = req.body ?? {};
-        if (!trainNumber || !vcId) {
-            return res.status(400).json({ error: 'Missing trainNumber or vcId' });
+        const { vcId, steamId, trainNumber } = req.body ?? {};
+        if (!vcId || (!steamId && !trainNumber)) {
+            return res.status(400).json({ error: 'Missing vcId (and need steamId or trainNumber)' });
         }
         res.json({ ok: true });
 
         try {
             for (const [, guild] of client.guilds.cache) {
+
+                // ── 1. Steam ID resolution ────────────────────────────────────
+                if (steamId) {
+                    const link = storage.getSteamLink(String(steamId));
+                    if (link) {
+                        const member = await guild.members.fetch(link.discordId).catch(() => null);
+                        if (!member) {
+                            console.log(`[Radio] Steam ${steamId}: member not found in guild`);
+                        } else if (!member.voice?.channel) {
+                            console.log(`[Radio] ${member.displayName}: not in a voice channel — skipped`);
+                        } else if (member.voice.channel.id === vcId) {
+                            console.log(`[Radio] ${member.displayName}: already in target channel — skipped`);
+                        } else {
+                            await member.voice.setChannel(vcId).catch(err =>
+                                console.error(`[Radio] Failed to move ${link.discordId}:`, err.message)
+                            );
+                            console.log(`[Radio] Moved ${member.displayName} (steam ${steamId}) → ${vcId}`);
+                        }
+                        continue; // steam link found — don't fall through to train number
+                    }
+                    console.log(`[Radio] Steam ${steamId}: not linked yet — falling back to train number`);
+                }
+
+                // ── 2. Train number fallback ──────────────────────────────────
+                if (!trainNumber) continue;
+
                 const allCrew = storage.getAllCrew(guild.id);
-                const crew = allCrew.filter(c => String(c.trainNumber) === String(trainNumber));
+                const crew    = allCrew.filter(c => String(c.trainNumber) === String(trainNumber));
 
                 console.log(`[Radio] Train ${trainNumber} → vcId=${vcId} | ${crew.length}/${allCrew.length} crew matched`);
 
@@ -137,6 +170,28 @@ module.exports = function startServer(client) {
             }
         } catch (err) {
             console.error('[Radio] Error:', err.message);
+        }
+    });
+
+    // ── GET /radio-channels ───────────────────────────────────────────────────
+    // Returns the current crew voice channels from the bot's guild.
+    // Called by GRDNConnect every 60 s so clients joining after /session start
+    // can self-populate their channel list without a host relay.
+    app.get('/radio-channels', async (req, res) => {
+        try {
+            for (const [, guild] of client.guilds.cache) {
+                const channels = [...guild.channels.cache.values()]
+                    .filter(ch =>
+                        ch.parentId === CREW_VC_CATEGORY_ID &&
+                        ch.type === ChannelType.GuildVoice)
+                    .sort((a, b) => a.rawPosition - b.rawPosition)
+                    .map(ch => ({ name: ch.name, vcId: ch.id }));
+                return res.json({ ok: true, channels });
+            }
+            res.json({ ok: true, channels: [] });
+        } catch (err) {
+            console.error('[RadioChannels] Error:', err.message);
+            res.status(500).json({ ok: false, error: err.message });
         }
     });
 
