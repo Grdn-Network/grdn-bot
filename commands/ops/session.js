@@ -45,11 +45,7 @@ module.exports = {
                 { name: 'Embed — post or restore the ops embed',  value: 'embed' },
             )
         )
-        .addStringOption(opt => opt
-            .setName('host')
-            .setDescription('For Start: tunnel name to connect to (e.g. red, grdn). Defaults to auto-detect from who clicks.')
-            .setRequired(false)
-        ),
+        ,
 
     async execute(interaction) {
         const action = interaction.options.getString('action');
@@ -140,33 +136,35 @@ async function handleStart(interaction) {
     const now = Date.now();
     storage.openSession(interaction.guild.id, interaction.user.id, now, 'official');
 
-    // ── Resolve which Cloudflare tunnel to connect to ─────────────────────────
-    // Priority: explicit `host` option → auto-detect from who clicked → direct IP fallback
+    // ── Resolve the clicker's Cloudflare tunnel ───────────────────────────────
+    // Whoever clicks Start Op IS the host for this session — their tunnel is used.
     // host-tunnels.json: { "discordUserId": "tunnelName", ... }
-    // "red" → Remote Dispatch link: https://red.grdnnetwork.com
-    //       → GRDNConnect URL:      https://red-connect.grdnnetwork.com
-    let connectUrl = `http://${DV_HOST}:${DV_PORT}`;
+    // "red" → Remote Dispatch: https://red.grdnnetwork.com
+    //       → GRDNConnect:     https://red-connect.grdnnetwork.com
+    let connectUrl = null;
     try {
-        // Read fresh every time — no require() cache so edits to the file take effect immediately
         const tunnelsPath = path.join(__dirname, '../../host-tunnels.json');
         const hostTunnels = JSON.parse(fs.readFileSync(tunnelsPath, 'utf8'));
-        const hostOverride = interaction.options?.getString?.('host') ?? null;
-        const tunnelName   = hostOverride || hostTunnels[interaction.user.id];
-        if (tunnelName) {
-            const rdLink = `https://${tunnelName}.grdnnetwork.com`;
-            db.prepare(`
-                INSERT OR IGNORE INTO dispatch_settings
-                    (id, server_name, server_password, remote_link, remote_password)
-                VALUES (1, 'Not set', 'Not set', 'Not set', 'GRDN')
-            `).run();
-            db.prepare(`UPDATE dispatch_settings SET remote_link = ? WHERE id = 1`).run(rdLink);
-            connectUrl = deriveDvConnectUrl(rdLink) ?? connectUrl;
-            console.log(`[Session] Tunnel: ${tunnelName}${hostOverride ? ' (manual override)' : ''} → ${connectUrl}`);
-        } else {
-            console.warn(`[Session] No tunnel found for user ${interaction.user.id} — using direct IP`);
+        const tunnelName  = hostTunnels[interaction.user.id];
+
+        if (!tunnelName) {
+            return interaction.editReply(
+                `❌ Your Discord user ID (\`${interaction.user.id}\`) isn't in \`host-tunnels.json\`.\n` +
+                `Add \`"${interaction.user.id}": "your-tunnel-name"\` to the file and restart the bot.`
+            );
         }
+
+        const rdLink = `https://${tunnelName}.grdnnetwork.com`;
+        db.prepare(`
+            INSERT OR IGNORE INTO dispatch_settings
+                (id, server_name, server_password, remote_link, remote_password)
+            VALUES (1, 'Not set', 'Not set', 'Not set', 'GRDN')
+        `).run();
+        db.prepare(`UPDATE dispatch_settings SET remote_link = ? WHERE id = 1`).run(rdLink);
+        connectUrl = deriveDvConnectUrl(rdLink);
+        console.log(`[Session] ${interaction.user.tag} → tunnel "${tunnelName}" → ${connectUrl}`);
     } catch (err) {
-        console.warn('[Session] host-tunnels.json lookup failed:', err.message);
+        return interaction.editReply(`❌ Could not read \`host-tunnels.json\`: ${err.message}`);
     }
 
     // ── Push bot URL, secret, and live crew channels to GRDNConnect ──────────
