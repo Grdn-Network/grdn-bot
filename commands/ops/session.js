@@ -19,6 +19,7 @@ const loggingConfig                              = require('../../config/logging
 const {
     ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE,
     DISPATCH_CHANNEL_ID, TRAIN_BOARD_CHANNEL_ID,
+    DV_HOST, DV_PORT,
 } = require('../../config');
 
 const FETCH_TIMEOUT_MS = 5000;
@@ -115,6 +116,26 @@ async function handleStart(interaction) {
 
     const now = Date.now();
     storage.openSession(interaction.guild.id, interaction.user.id, now, 'official');
+
+    // Push bot URL + secret to GRDNConnect so the mod never needs manual config.
+    // Fire-and-forget — don't let game-unreachable block the Discord response.
+    const botPublicUrl = process.env.BOT_PUBLIC_URL || '';
+    const botSecret    = process.env.HTTP_SECRET    || '';
+    if (botPublicUrl) {
+        fetch(`http://${DV_HOST}:${DV_PORT}/session-config`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ botUrl: botPublicUrl, secret: botSecret }),
+            timeout: 3000,
+        }).then(r => {
+            if (!r.ok) console.warn(`[SessionConfig] Game returned ${r.status}`);
+            else       console.log(`[SessionConfig] Bot config pushed to game (${botPublicUrl})`);
+        }).catch(err =>
+            console.warn('[SessionConfig] Could not reach game — manual UMM config required:', err.message)
+        );
+    } else {
+        console.warn('[SessionConfig] BOT_PUBLIC_URL not set in .env — game will use UMM settings as fallback');
+    }
 
     const embedStatus = await syncEmbedFromMod(interaction.guild);
 
