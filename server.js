@@ -455,6 +455,37 @@ module.exports = function startServer(client) {
         }
     });
 
+    // ── POST /stats-push ──────────────────────────────────────────────────────
+    // Body: { entries: [{ trainNumber, carMiles }] }
+    // GRDNConnect pushes car-miles for each active train every 60 s.
+    // Resolves train number → Discord user via the registrations table,
+    // then upserts user_session_stats and user_lifetime_stats.
+    app.post('/stats-push', async (req, res) => {
+        const { entries } = req.body ?? {};
+        if (!Array.isArray(entries) || entries.length === 0)
+            return res.json({ ok: true, recorded: 0 });
+
+        let recorded = 0;
+        for (const [, guild] of client.guilds.cache) {
+            const session = storage.getActiveSession(guild.id);
+            if (!session) continue;
+
+            for (const { trainNumber, carMiles } of entries) {
+                if (!trainNumber || !carMiles || carMiles <= 0) continue;
+                const reg = storage.getRegistrationByTrainNumber(String(trainNumber));
+                if (!reg) {
+                    console.log(`[StatsPush] No registration for train ${trainNumber} — skipped`);
+                    continue;
+                }
+                storage.addCarMiles(session.id, reg.userId, carMiles);
+                recorded++;
+            }
+        }
+
+        console.log(`[StatsPush] Recorded ${recorded} car-mile update(s) from ${entries.length} train(s)`);
+        res.json({ ok: true, recorded });
+    });
+
     // ── Health check ──────────────────────────────────────────────────────────
     app.get('/ping', (req, res) => res.json({ ok: true }));
 

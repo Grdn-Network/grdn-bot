@@ -51,6 +51,10 @@ try { db.prepare(`ALTER TABLE dispatch_settings ADD COLUMN mods_list   TEXT`).ru
 try { db.prepare(`ALTER TABLE dispatch_settings ADD COLUMN rd_setup    TEXT`).run(); } catch {}
 // Migrate: ops_active flag — 1 while a session is running, 0 otherwise
 try { db.prepare(`ALTER TABLE dispatch_settings ADD COLUMN ops_active INTEGER NOT NULL DEFAULT 0`).run(); } catch {}
+// Migrate: interchange_mode — 1 = toggle is on (pre-start), 0 = off; consumed at /session start
+try { db.prepare(`ALTER TABLE dispatch_settings ADD COLUMN interchange_mode INTEGER NOT NULL DEFAULT 0`).run(); } catch {}
+// Migrate: hub_stations — JSON array of yard IDs treated as hub stops for leg classification
+try { db.prepare(`ALTER TABLE dispatch_settings ADD COLUMN hub_stations TEXT NOT NULL DEFAULT '["MF","HB"]'`).run(); } catch {}
 
 // Seed default text for any rows that have nulls (first run after migration)
 db.prepare(`
@@ -182,6 +186,8 @@ db.prepare(`
 
 // Migrate: add session_type if not present
 try { db.prepare(`ALTER TABLE ops_sessions ADD COLUMN session_type TEXT NOT NULL DEFAULT 'official'`).run(); } catch {}
+// Migrate: ops_mode — 'standard' or 'interchange' (set at session start from dispatch_settings)
+try { db.prepare(`ALTER TABLE ops_sessions ADD COLUMN ops_mode TEXT NOT NULL DEFAULT 'standard'`).run(); } catch {}
 
 db.prepare(`
     CREATE TABLE IF NOT EXISTS ops_log (
@@ -253,6 +259,63 @@ db.prepare(`
         guild_id TEXT NOT NULL,
         crew_number INTEGER NOT NULL,
         created_at INTEGER NOT NULL
+    )
+`).run();
+
+/* -----------------------------------------------------
+   SESSION STATS — per-job attribution
+   One row per /complete, regardless of ops_mode.
+   leg_type is null when ops_mode = 'standard'.
+----------------------------------------------------- */
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS job_completions (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id   INTEGER NOT NULL,
+        user_id      TEXT    NOT NULL,
+        job_id       TEXT    NOT NULL,
+        job_type     TEXT,
+        departure    TEXT,
+        destination  TEXT,
+        car_count    INTEGER DEFAULT 0,
+        cargo        TEXT,
+        wage         REAL    DEFAULT 0,
+        leg_type     TEXT,
+        completed_at INTEGER
+    )
+`).run();
+
+/* -----------------------------------------------------
+   SESSION STATS — per-player totals, updated live
+   Primary key: (session_id, user_id)
+----------------------------------------------------- */
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS user_session_stats (
+        session_id       INTEGER NOT NULL,
+        user_id          TEXT    NOT NULL,
+        car_miles        REAL    DEFAULT 0,
+        jobs_completed   INTEGER DEFAULT 0,
+        local_deliveries INTEGER DEFAULT 0,
+        hub_inbound      INTEGER DEFAULT 0,
+        hub_outbound     INTEGER DEFAULT 0,
+        interchange      INTEGER DEFAULT 0,
+        PRIMARY KEY (session_id, user_id)
+    )
+`).run();
+
+/* -----------------------------------------------------
+   LIFETIME STATS — cumulative per-player totals
+   Updated at each job completion and car-miles push.
+----------------------------------------------------- */
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS user_lifetime_stats (
+        user_id          TEXT PRIMARY KEY,
+        car_miles        REAL    DEFAULT 0,
+        jobs_completed   INTEGER DEFAULT 0,
+        local_deliveries INTEGER DEFAULT 0,
+        hub_inbound      INTEGER DEFAULT 0,
+        hub_outbound     INTEGER DEFAULT 0,
+        interchange      INTEGER DEFAULT 0,
+        updated_at       INTEGER
     )
 `).run();
 

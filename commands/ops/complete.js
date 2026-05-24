@@ -5,6 +5,7 @@
 const { SlashCommandBuilder } = require('discord.js');
 const fetch   = require('node-fetch');
 const storage = require('../../database/storage');
+const { classifyLeg } = require('../../utils/statsHelper');
 
 const FETCH_TIMEOUT_MS = 5000;
 
@@ -51,6 +52,30 @@ module.exports = {
                 return fail('⚠️ The Derail Valley mod returned an unexpected response. Is the game running?');
 
             if (result.ok) {
+                // Record job attribution for stats tracking
+                try {
+                    const session = storage.getActiveSession(interaction.guild.id);
+                    if (session) {
+                        const hubs    = storage.getHubStations();
+                        const legType = classifyLeg(result.departure, result.destination, hubs);
+                        storage.recordJobCompletion({
+                            sessionId:   session.id,
+                            userId:      interaction.user.id,
+                            jobId:       result.jobId,
+                            jobType:     result.jobType    || null,
+                            departure:   result.departure  || null,
+                            destination: result.destination || null,
+                            carCount:    result.carCount   || 0,
+                            cargo:       result.cargo      || null,
+                            wage:        result.wage       || 0,
+                            legType,
+                        });
+                        console.log(`[Complete] ${result.jobId} attributed to ${interaction.user.id} (${legType})`);
+                    }
+                } catch (err) {
+                    console.error('[Complete] Stats attribution error:', err.message);
+                }
+
                 // Delete the ephemeral defer, then post a public success message.
                 await interaction.deleteReply();
                 return interaction.followUp(`✅ Job **${jobId}** completed. Payment has been made.`);

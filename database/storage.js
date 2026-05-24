@@ -501,6 +501,202 @@ function clearAllCrewVCs(guildId) {
 }
 
 // ===============================
+// STATS FUNCTIONS
+// ===============================
+
+/**
+ * Returns the active crew member registration by train number, or null.
+ * Used by /stats-push to resolve train number → Discord user ID.
+ */
+function getRegistrationByTrainNumber(trainNumber) {
+    const row = db.prepare(`
+        SELECT user_id, type, train_number, loco_type, preferred_name
+        FROM registrations
+        WHERE train_number = ? AND active = 1
+        ORDER BY rowid DESC LIMIT 1
+    `).get(trainNumber);
+    if (!row) return null;
+    return {
+        userId: row.user_id,
+        type: row.type,
+        trainNumber: row.train_number,
+        locoType: row.loco_type ?? null,
+        preferredName: row.preferred_name,
+    };
+}
+
+/**
+ * Returns the hub station IDs for leg classification.
+ * Reads from dispatch_settings.hub_stations (JSON array).
+ * Default: ['MF', 'HB']
+ */
+function getHubStations() {
+    const row = db.prepare(`SELECT hub_stations FROM dispatch_settings WHERE id = 1`).get();
+    try {
+        const parsed = JSON.parse(row?.hub_stations ?? '["MF","HB"]');
+        return Array.isArray(parsed) ? parsed.map(s => String(s).toUpperCase()) : ['MF', 'HB'];
+    } catch {
+        return ['MF', 'HB'];
+    }
+}
+
+/**
+ * Saves hub station list.
+ */
+function setHubStations(hubArray) {
+    db.prepare(`UPDATE dispatch_settings SET hub_stations = ? WHERE id = 1`).run(JSON.stringify(hubArray));
+}
+
+/**
+ * Returns true if Interchange Mode is toggled on (pre-session flag).
+ */
+function getInterchangeMode() {
+    const row = db.prepare(`SELECT interchange_mode FROM dispatch_settings WHERE id = 1`).get();
+    return (row?.interchange_mode ?? 0) === 1;
+}
+
+/**
+ * Sets or clears the Interchange Mode pre-session flag.
+ */
+function setInterchangeMode(enabled) {
+    db.prepare(`UPDATE dispatch_settings SET interchange_mode = ? WHERE id = 1`).run(enabled ? 1 : 0);
+}
+
+/**
+ * Writes ops_mode onto an open session row.
+ * Called by handleStart right after openSession.
+ */
+function setSessionOpsMode(sessionId, mode) {
+    db.prepare(`UPDATE ops_sessions SET ops_mode = ? WHERE id = ?`).run(mode, sessionId);
+}
+
+/**
+ * Returns the ops_mode for a session ('standard' or 'interchange').
+ */
+function getSessionOpsMode(sessionId) {
+    const row = db.prepare(`SELECT ops_mode FROM ops_sessions WHERE id = ?`).get(sessionId);
+    return row?.ops_mode ?? 'standard';
+}
+
+/**
+ * Returns the most recently closed session for a guild, or null.
+ */
+function getLastCompletedSession(guildId) {
+    return db.prepare(`
+        SELECT * FROM ops_sessions
+        WHERE guild_id = ? AND ended_at IS NOT NULL
+        ORDER BY ended_at DESC LIMIT 1
+    `).get(guildId) || null;
+}
+
+/**
+ * Records a single job completion and updates both session and lifetime stats.
+ * legType: 'local' | 'hub_inbound' | 'hub_outbound' | 'interchange' | null
+ */
+function recordJobCompletion({ sessionId, userId, jobId, jobType, departure, destination, carCount, cargo, wage, legType }) {
+    const now = Date.now();
+
+    db.prepare(`
+        INSERT INTO job_completions
+            (session_id, user_id, job_id, job_type, departure, destination, car_count, cargo, wage, leg_type, completed_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+        sessionId, userId, jobId,
+        jobType     || null,
+        departure   || null,
+        destination || null,
+        carCount    || 0,
+        cargo       || null,
+        wage        || 0,
+        legType     || null,
+        now,
+    );
+
+    // Map leg_type to the matching counter column
+    const legCol = {
+        local:        'local_deliveries',
+        hub_inbound:  'hub_inbound',
+        hub_outbound: 'hub_outbound',
+        interchange:  'interchange',
+    }[legType] ?? 'local_deliveries';
+
+    // Upsert session stats
+    db.prepare(`
+        INSERT INTO user_session_stats (session_id, user_id, jobs_completed, ${legCol})
+        VALUES (?, ?, 1, 1)
+        ON CONFLICT(session_id, user_id) DO UPDATE SET
+            jobs_completed = jobs_completed + 1,
+            ${legCol}      = ${legCol} + 1
+    `).run(sessionId, userId);
+
+    // Upsert lifetime stats
+    db.prepare(`
+        INSERT INTO user_lifetime_stats (user_id, jobs_completed, ${legCol}, updated_at)
+        VALUES (?, 1, 1, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            jobs_completed = jobs_completed + 1,
+            ${legCol}      = ${legCol} + 1,
+            updated_at     = excluded.updated_at
+    `).run(userId, now);
+}
+
+/**
+ * Adds car-miles to a player's session and lifetime totals.
+ * Called from POST /stats-push for each resolved train→user.
+ */
+function addCarMiles(sessionId, userId, carMiles) {
+    const now = Date.now();
+
+    db.prepare(`
+        INSERT INTO user_session_stats (session_id, user_id, car_miles)
+        VALUES (?, ?, ?)
+        ON CONFLICT(session_id, user_id) DO UPDATE SET
+            car_miles = car_miles + excluded.car_miles
+    `).run(sessionId, userId, carMiles);
+
+    db.prepare(`
+        INSERT INTO user_lifetime_stats (user_id, car_miles, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            car_miles  = car_miles + excluded.car_miles,
+            updated_at = excluded.updated_at
+    `).run(userId, carMiles, now);
+}
+
+/**
+ * Returns all per-player stat rows for a session.
+ */
+function getSessionStats(sessionId) {
+    return db.prepare(`
+        SELECT user_id, car_miles, jobs_completed, local_deliveries, hub_inbound, hub_outbound, interchange
+        FROM user_session_stats
+        WHERE session_id = ?
+    `).all(sessionId);
+}
+
+/**
+ * Returns career lifetime stats for a single user, or null.
+ */
+function getUserLifetimeStats(userId) {
+    return db.prepare(`
+        SELECT car_miles, jobs_completed, local_deliveries, hub_inbound, hub_outbound, interchange
+        FROM user_lifetime_stats
+        WHERE user_id = ?
+    `).get(userId) || null;
+}
+
+/**
+ * Returns all lifetime stat rows (for the career leaderboard).
+ */
+function getAllLifetimeStats() {
+    return db.prepare(`
+        SELECT user_id, car_miles, jobs_completed, local_deliveries, hub_inbound, hub_outbound, interchange
+        FROM user_lifetime_stats
+        ORDER BY car_miles DESC
+    `).all();
+}
+
+// ===============================
 // EXPORTS
 // ===============================
 
@@ -541,4 +737,18 @@ module.exports = {
     getCrewVCs,
     getCrewVCByChannel,
     clearAllCrewVCs,
+    // Stats
+    getRegistrationByTrainNumber,
+    getHubStations,
+    setHubStations,
+    getInterchangeMode,
+    setInterchangeMode,
+    setSessionOpsMode,
+    getSessionOpsMode,
+    getLastCompletedSession,
+    recordJobCompletion,
+    addCarMiles,
+    getSessionStats,
+    getUserLifetimeStats,
+    getAllLifetimeStats,
 };

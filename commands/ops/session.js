@@ -38,11 +38,12 @@ module.exports = {
             .setDescription('What to do')
             .setRequired(true)
             .addChoices(
-                { name: 'Start — open an official ops session',   value: 'start' },
-                { name: 'End — close session and save hours',     value: 'end'   },
-                { name: 'Jobs — list active Derail Valley jobs',  value: 'jobs'  },
-                { name: 'Board — force-refresh the Train Board',  value: 'board' },
-                { name: 'Embed — post or restore the ops embed',  value: 'embed' },
+                { name: 'Start — open an official ops session',        value: 'start' },
+                { name: 'End — close session and save hours',          value: 'end'   },
+                { name: 'Jobs — list active Derail Valley jobs',       value: 'jobs'  },
+                { name: 'Board — force-refresh the Train Board',       value: 'board' },
+                { name: 'Embed — post or restore the ops embed',       value: 'embed' },
+                { name: 'Mode — toggle Interchange Mode on/off',       value: 'mode'  },
             )
         )
         ,
@@ -54,6 +55,7 @@ module.exports = {
         if (action === 'jobs')  return handleJobs(interaction);
         if (action === 'board') return handleBoard(interaction);
         if (action === 'embed') return handleEmbed(interaction);
+        if (action === 'mode')  return handleMode(interaction);
     },
 
     // Exposed for button handlers
@@ -134,7 +136,15 @@ async function handleStart(interaction) {
     await interaction.deferReply({ flags: 64 });
 
     const now = Date.now();
-    storage.openSession(interaction.guild.id, interaction.user.id, now, 'official');
+    const sessionId = storage.openSession(interaction.guild.id, interaction.user.id, now, 'official');
+
+    // Apply Interchange Mode if it was toggled before session start
+    const isInterchangeMode = storage.getInterchangeMode();
+    if (isInterchangeMode) {
+        storage.setSessionOpsMode(sessionId, 'interchange');
+        storage.setInterchangeMode(false); // consume the flag
+        console.log(`[Session] Interchange Mode applied to session ${sessionId}`);
+    }
 
     // ── Resolve the clicker's Cloudflare tunnel ───────────────────────────────
     // Whoever clicks Start Op IS the host for this session — their tunnel is used.
@@ -199,8 +209,9 @@ async function handleStart(interaction) {
         .setTitle('🟢 Official Ops Session Opened')
         .setColor(0x57f287)
         .addFields(
-            { name: 'Started by', value: `<@${interaction.user.id}>`, inline: true },
-            { name: 'Dispatch',   value: embedStatus,                  inline: false },
+            { name: 'Started by', value: `<@${interaction.user.id}>`,                              inline: true },
+            { name: 'Mode',       value: isInterchangeMode ? '🔄 Interchange' : 'Standard',       inline: true },
+            { name: 'Dispatch',   value: embedStatus,                                               inline: false },
         )
         .setTimestamp()
         .setFooter({ text: 'GRDN Ops' });
@@ -210,9 +221,11 @@ async function handleStart(interaction) {
     updateTrainBoard(interaction.client, interaction.guild.id, TRAIN_BOARD_CHANNEL_ID)
         .catch(err => console.error('[TrainBoard] session start update failed:', err));
 
+    const modeNote = isInterchangeMode ? '\n• **🔄 Interchange Mode** — stats and role labels active' : '';
+
     return interaction.editReply({
         content:
-            `✅ Official ops session open.\n` +
+            `✅ Official ops session open.${modeNote}\n` +
             `• Crew: run **/setcrew** with your **train number** to join\n` +
             `• Dispatch embed: ${embedStatus}`,
     });
@@ -316,6 +329,38 @@ async function handleEnd(interaction) {
             `✅ Reset complete.\n` +
             `• Nicknames reset: **${reset}** | Failed: **${failed}**\n` +
             `• Ops session: **${sessionId ? 'closed — hours saved' : 'no active session'}**`,
+        flags: 64,
+    });
+}
+
+// ── mode ──────────────────────────────────────────────────────────────────────
+
+async function handleMode(interaction) {
+    if (!hasAnyRole(interaction.member, [ADMIN_ROLE, DISPATCH_QUAL_ROLE])) {
+        return interaction.reply({ content: '❌ You do not have permission to use this command.', flags: 64 });
+    }
+
+    // Guard: can't change mode while a session is already active
+    const active = storage.getActiveSession(interaction.guild.id);
+    if (active) {
+        const currentMode = storage.getSessionOpsMode(active.id);
+        return interaction.reply({
+            content: `⚠️ A session is already running in **${currentMode}** mode.\nEnd the session first, then toggle the mode for the next one.`,
+            flags: 64,
+        });
+    }
+
+    const current = storage.getInterchangeMode();
+    const next    = !current;
+    storage.setInterchangeMode(next);
+
+    const label = next ? '🔄 **Interchange Mode ON**' : '🔲 **Interchange Mode OFF**';
+    const note  = next
+        ? 'Stats, role labels, and hub-and-spoke leg classification will be active for the next session.'
+        : 'The next session will run in standard mode (hours only).';
+
+    return interaction.reply({
+        content: `${label}\n${note}`,
         flags: 64,
     });
 }
