@@ -209,33 +209,27 @@ module.exports = function startServer(client) {
 
         try {
             for (const [, guild] of client.guilds.cache) {
-                const crew = storage.getAllCrew(guild.id)
-                    .filter(c => String(c.trainNumber) === String(trainNumber));
+                // Alert ALL opted-in crew regardless of which train the defect is on.
+                // If you've opted in, you hear every defect across the whole session.
+                const allCrew = storage.getAllCrew(guild.id);
 
-                // Special case: consist checks fire even without a matching crew entry
-                // (they're informational, not safety-critical)
-                const isConsistCheck = defectType === 'Consist Check';
-
-                for (const c of crew) {
+                for (const c of allCrew) {
                     const pref = db.prepare(
                         `SELECT enabled FROM defect_prefs WHERE user_id = ?`
                     ).get(c.userId);
 
-                    // Defect alerts: opt-in required. Consist checks: always skip if opted out.
-                    if (!pref?.enabled && !isConsistCheck) continue;
-                    if (!pref?.enabled && isConsistCheck) continue; // consist checks respect opt-in too
+                    if (!pref?.enabled) continue; // always respect opt-in
 
                     const member = await guild.members.fetch(c.userId).catch(() => null);
                     if (!member?.voice?.channel) continue;
 
-                    console.log(`[Defect] ${defectType} → ${c.userId} (train ${trainNumber})`);
+                    console.log(`[Defect] ${defectType} (train ${trainNumber}) → ${c.userId}`);
 
                     if (alertTrain) {
-                        // Pass structured fields — voiceAlert builds the clip sequence
                         alertTrain(guild, trainNumber, defectType, detail ?? null).catch(err =>
                             console.error('[Defect] Voice alert failed:', err.message)
                         );
-                        break; // one voice alert per train per event (avoid double-joining)
+                        break; // one voice alert per event — bot joins one VC
                     }
                 }
             }
@@ -281,10 +275,13 @@ module.exports = function startServer(client) {
 
                     if (existing) {
                         // ── 1. Already registered — update train/loco only ────
+                        // If they were a Dispatcher but are now boarding a loco, flip them
+                        // to Road Crew automatically so hours track correctly.
                         db.prepare(`
                             UPDATE registrations
                             SET train_number = ?,
-                                loco_type    = CASE WHEN ? IS NOT NULL THEN ? ELSE loco_type END
+                                loco_type    = CASE WHEN ? IS NOT NULL THEN ? ELSE loco_type END,
+                                type         = CASE WHEN type = 'Dispatcher' THEN 'Road Crew' ELSE type END
                             WHERE user_id = ? AND active = 1
                         `).run(toTrainNumber, locoType ?? null, locoType ?? null, link.discordId);
 
