@@ -3,7 +3,8 @@
 // Replaces both the old /profile and /hours commands.
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const storage = require('../../database/storage');
+const storage  = require('../../database/storage');
+const { getRoleLabel } = require('../../utils/statsHelper');
 
 function fmt(minutes) {
     const h = Math.floor(minutes / 60);
@@ -37,6 +38,7 @@ module.exports = {
 
         const h           = storage.getUserHours(target.id);
         const opsAttended = storage.getOpsAttended(target.id);
+        const lifetime    = storage.getUserLifetimeStats(target.id);
 
         const operational = h.road_crew + h.dispatch + h.shunting + h.trainmaster;
         const grandTotal  = operational + h.bonus;
@@ -57,14 +59,31 @@ module.exports = {
         ];
         if (h.bonus > 0) hoursLines.push(`(incl. ${fmt(h.bonus)} founding bonus)`);
 
-        // ─── future fields ─────────────────────────────────────────────────────
-        // When these are tracked, add them to hoursLines or a new embed section:
-        //   Company Revenue    $X,XXX
-        //   Jobs Completed     NNN
-        //   Avg Session Length Xh XXm
-        // ───────────────────────────────────────────────────────────────────────
-
         const hoursBlock = '```\n' + hoursLines.join('\n') + '\n```';
+
+        // ─── career stats ──────────────────────────────────────────────────────
+        const hasMiles = lifetime && (lifetime.car_miles || 0) > 0;
+        const hasJobs  = lifetime && (lifetime.jobs_completed || 0) > 0;
+        const hasStats = hasMiles || hasJobs;
+
+        const milesStr = hasMiles
+            ? `${(lifetime.car_miles).toFixed(1)} mi`
+            : '—';
+        const jobsStr  = hasJobs
+            ? `${lifetime.jobs_completed}`
+            : '—';
+
+        // Role label from the most recent completed session this user participated in
+        let roleLabel = null;
+        const lastSession = storage.getLastCompletedSession(interaction.guild.id);
+        if (lastSession) {
+            const sessionStats = storage.getSessionStats(lastSession.id);
+            const myStats = sessionStats.find(s => s.user_id === target.id);
+            if (myStats) {
+                const label = getRoleLabel(myStats);
+                if (label && label !== 'Crew') roleLabel = label;
+            }
+        }
 
         const embed = new EmbedBuilder()
             .setTitle(`📘 ${record.preferred_name}`)
@@ -76,7 +95,9 @@ module.exports = {
                 { name: '🚆 Train',         value: record.train_number || '—',  inline: true },
                 { name: '🔧 Loco',          value: record.loco_type   || '—',  inline: true },
                 { name: '📅 Ops Attended',  value: `${opsAttended}`,            inline: true },
-                // Future inline fields go here (Revenue, Jobs Completed, etc.)
+                { name: '🛤️ Miles Driven',  value: milesStr,                    inline: true },
+                { name: '✅ Jobs Done',      value: jobsStr,                     inline: true },
+                ...(roleLabel ? [{ name: '🏅 Last Role', value: roleLabel, inline: true }] : []),
                 { name: '⏱️ Hours',         value: hoursBlock,                  inline: false },
             )
             .setFooter({ text: 'GRDN Crew System' })

@@ -124,7 +124,7 @@ async function showStats(interaction) {
             .map((r, i) => `${medals[i]} ${r.member.displayName}: ${valFn(r.stat)}`)
             .join('\n') || '*No data*';
 
-    const milesCol      = col(byMiles,      s => `${fmtMiles(s.car_miles || 0)} mi`);
+    const milesCol      = col(byMiles,      s => `${fmtMiles(s.car_miles || 0)} mi driven`);
     const deliveryCol   = col(byDelivery,   s => `${(s.hub_outbound || 0) + (s.local_deliveries || 0)} jobs`);
     const interchangeCol = col(byInterchange, s => `${s.interchange || 0} jobs`);
 
@@ -152,7 +152,7 @@ async function showStats(interaction) {
         .setTitle('📊 GRDN Career Stats')
         .setColor(0x2b2d31)
         .addFields(
-            { name: '🚂 Car-Miles',     value: milesCol,       inline: true },
+            { name: '🛤️ Miles Driven',   value: milesCol,       inline: true },
             { name: '🎯 Deliveries',    value: deliveryCol,    inline: true },
             { name: '🔄 Interchange',   value: interchangeCol, inline: true },
         )
