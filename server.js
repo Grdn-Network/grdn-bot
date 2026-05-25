@@ -450,6 +450,32 @@ module.exports = function startServer(client) {
         } catch (err) {
             console.error('[CrewUpdate] TrainBoard refresh failed:', err.message);
         }
+
+        // ── DM confirmation to the crew member who just assigned ──────────────
+        // Only fires when a known Discord user made a successful assignment.
+        // Skips auto-registered players — they already got a channel message above.
+        // Silently ignores failures (DMs closed, etc.).
+        if (updatedRow && !autoRegistered) {
+            try {
+                for (const [, guild] of client.guilds.cache) {
+                    const member = await guild.members.fetch(updatedRow.user_id).catch(() => null);
+                    if (!member) continue;
+
+                    const locoTag  = updatedRow.loco_type ? ` (${updatedRow.loco_type})` : '';
+                    const typeNote = updatedRow.type === 'Road Crew'
+                        ? ` as **Road Crew**`
+                        : updatedRow.type ? ` as **${updatedRow.type}**` : '';
+
+                    await member.send(
+                        `✅ **GRDN Crew** — Train **${updatedRow.train_number}**${locoTag}${typeNote}\n` +
+                        `Your nickname and the train board have been updated.`
+                    ).catch(() => {}); // silently ignore if DMs are closed
+                    break;
+                }
+            } catch (err) {
+                console.error('[CrewUpdate] DM notification error:', err.message);
+            }
+        }
     });
 
     // ── POST /stats-push ──────────────────────────────────────────────────────
