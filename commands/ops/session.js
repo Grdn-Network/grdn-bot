@@ -253,7 +253,7 @@ async function handleStart(interaction, typeOverride = null) {
 
     return interaction.editReply({
         content:
-            `✅ Official ops session open.${modeNote}\n` +
+            `✅ ${sessionTypeLabel} ops session open.${modeNote}\n` +
             `• Crew: run **/setcrew** with your **train number** to join\n` +
             `• Dispatch embed: ${embedStatus}`,
     });
