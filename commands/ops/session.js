@@ -44,7 +44,15 @@ module.exports = {
                 { name: 'Embed — post or restore the ops embed',       value: 'embed' },
             )
         )
-        ,
+        .addStringOption(opt => opt
+            .setName('session_type')
+            .setDescription('Type of session (only used with Start)')
+            .addChoices(
+                { name: 'Official',    value: 'official'    },
+                { name: 'Unofficial',  value: 'unofficial'  },
+                { name: 'Stress Test', value: 'stress_test' },
+            )
+        ),
 
     async execute(interaction) {
         const action = interaction.options.getString('action');
@@ -134,8 +142,9 @@ async function handleStart(interaction) {
 
     await interaction.deferReply({ flags: 64 });
 
+    const sessionType = interaction.options.getString('session_type') ?? 'official';
     const now = Date.now();
-    const sessionId = storage.openSession(interaction.guild.id, interaction.user.id, now, 'official');
+    const sessionId = storage.openSession(interaction.guild.id, interaction.user.id, now, sessionType);
 
     // ── Resolve the clicker's Cloudflare tunnel ───────────────────────────────
     // Whoever clicks Start Op IS the host for this session — their tunnel is used.
@@ -148,22 +157,29 @@ async function handleStart(interaction) {
         const hostTunnels = JSON.parse(fs.readFileSync(tunnelsPath, 'utf8'));
         const tunnelName  = hostTunnels[interaction.user.id];
 
-        if (!tunnelName) {
-            return interaction.editReply(
-                `❌ Your Discord user ID (\`${interaction.user.id}\`) isn't in \`host-tunnels.json\`.\n` +
-                `Add \`"${interaction.user.id}": "your-tunnel-name"\` to the file and restart the bot.`
-            );
+        if (tunnelName) {
+            // Official host with a Cloudflare tunnel
+            const rdLink = `https://${tunnelName}.grdnnetwork.com`;
+            db.prepare(`
+                INSERT OR IGNORE INTO dispatch_settings
+                    (id, server_name, server_password, remote_link, remote_password)
+                VALUES (1, 'Not set', 'Not set', 'Not set', 'GRDN')
+            `).run();
+            db.prepare(`UPDATE dispatch_settings SET remote_link = ? WHERE id = 1`).run(rdLink);
+            connectUrl = deriveDvConnectUrl(rdLink);
+            console.log(`[Session] ${interaction.user.tag} → tunnel "${tunnelName}" → ${connectUrl}`);
+        } else {
+            // Not in host-tunnels — fall back to URL set via /setdvconnection
+            connectUrl = storage.getDvBaseUrl();
+            if (!connectUrl) {
+                return interaction.editReply(
+                    `❌ No DV connection configured for your account.\n` +
+                    `• To be a regular host: ask an admin to add your ID to \`host-tunnels.json\`\n` +
+                    `• For a one-off session: run \`/setdvconnection\` with your mod URL first`
+                );
+            }
+            console.log(`[Session] ${interaction.user.tag} → using pre-set URL: ${connectUrl}`);
         }
-
-        const rdLink = `https://${tunnelName}.grdnnetwork.com`;
-        db.prepare(`
-            INSERT OR IGNORE INTO dispatch_settings
-                (id, server_name, server_password, remote_link, remote_password)
-            VALUES (1, 'Not set', 'Not set', 'Not set', 'GRDN')
-        `).run();
-        db.prepare(`UPDATE dispatch_settings SET remote_link = ? WHERE id = 1`).run(rdLink);
-        connectUrl = deriveDvConnectUrl(rdLink);
-        console.log(`[Session] ${interaction.user.tag} → tunnel "${tunnelName}" → ${connectUrl}`);
     } catch (err) {
         return interaction.editReply(`❌ Could not read \`host-tunnels.json\`: ${err.message}`);
     }
@@ -202,13 +218,16 @@ async function handleStart(interaction) {
         console.log(`[Session] Interchange Mode active for session ${sessionId} (read from mod /server-info)`);
     }
 
+    const sessionTypeLabel = { official: 'Official', unofficial: 'Unofficial', stress_test: 'Stress Test' }[sessionType] ?? sessionType;
+
     const logEmbed = new EmbedBuilder()
-        .setTitle('🟢 Official Ops Session Opened')
+        .setTitle('🟢 Ops Session Opened')
         .setColor(0x57f287)
         .addFields(
-            { name: 'Started by', value: `<@${interaction.user.id}>`,                              inline: true },
-            { name: 'Mode',       value: isInterchangeMode ? '🔄 Interchange' : 'Standard',       inline: true },
-            { name: 'Dispatch',   value: embedStatus,                                               inline: false },
+            { name: 'Started by',    value: `<@${interaction.user.id}>`,                              inline: true },
+            { name: 'Session Type',  value: sessionTypeLabel,                                         inline: true },
+            { name: 'Mode',          value: isInterchangeMode ? '🔄 Interchange' : 'Standard',       inline: true },
+            { name: 'Dispatch',      value: embedStatus,                                               inline: false },
         )
         .setTimestamp()
         .setFooter({ text: 'GRDN Ops' });

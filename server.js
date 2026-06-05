@@ -405,7 +405,7 @@ module.exports = function startServer(client) {
             }
         }
 
-        // ── Post-response: sync nickname, crew VC name, and train board ────────
+        // ── Post-response: sync nickname, crew VC name, enroll in hours, and train board ─
         // These run after the HTTP response is sent — failures are non-fatal.
         try {
             for (const [, guild] of client.guilds.cache) {
@@ -433,6 +433,20 @@ module.exports = function startServer(client) {
                             await member.voice.channel
                                 .setName(`(${toTrainNumber}) | Crew ${vc.crew_number}`)
                                 .catch(() => {});
+                        }
+                    }
+
+                    // Enroll in session hour tracking — mirrors enrollIfSessionActive in setcrew.js.
+                    // Without this, players who registered via the in-game radio instead of /setcrew
+                    // were never added to session_crew and never had their hours clock started.
+                    const activeSession = storage.getActiveSession(guild.id);
+                    if (activeSession && updatedRow) {
+                        const category = storage.classifyCategory(updatedRow.type, updatedRow.train_number);
+                        if (category) {
+                            storage.addToSessionCrew(activeSession.id, updatedRow.user_id);
+                            if (member.voice?.channel) {
+                                storage.openOpsEntry(updatedRow.user_id, guild.id, activeSession.id, category, Date.now());
+                            }
                         }
                     }
                 }
