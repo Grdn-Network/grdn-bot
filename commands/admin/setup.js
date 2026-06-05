@@ -29,40 +29,38 @@ module.exports = {
         });
 
         const embed = new EmbedBuilder()
-            .setTitle('Welcome to GRDN Ops')
+            .setTitle('Welcome to GRDN OPS - here\'s how to get started.')
             .setColor(0x2b2d31)
-            .setDescription('Here\'s how to get started.')
             .addFields(
                 {
-                    name: 'Operations are event-based',
+                    name: 'Operations are event-based.',
                     value: 'Check the pinned announcement at the top of the server for the current event, then use #ops-info for server connection details and mod info.',
                 },
                 {
-                    name: 'When you join',
-                    value: 'Find a locomotive anywhere on the map. Set your train number with `/setcrew` in Discord, you\'ll need a Preferred Name. After that you can use the in-game comms radio.\n\nJump into Ops Radio East and let the controller know where you are and what you\'re doing. Snag a train and contact dispatch via `/setcrew` or radio.\n\nIf nobody is controlling your area you\'re in Dark Territory. Grab a job and go, just watch your surroundings.',
+                    name: 'When you join:',
+                    value: '(Generally)\nFind a locomotive anywhere on the map.\nSet your train number using `/setcrew` in Discord, you need a "Preferred Name". Afterwards you can use the in game comms radio!\n\nJump into Ops Radio East and let the controller know where you are and what you\'re doing.\n\nGenerally you will want to snag a train, use `/setcrew` or radio and contact dispatch.\n\nIf nobody is controlling your area, you\'re in Dark Territory — grab a job and go, just watch your surroundings.',
                 },
                 {
                     name: 'First time using GRDNConnect?',
-                    value: 'Load into the game and try to use the radio. A message will pop up in #ops-chat, click the button to link your Steam and Discord accounts. You only do this once.',
+                    value: 'Load into the game and try to use the radio. A message will appear in #ops-chat, click the button to link your Steam and Discord accounts. You only do this once.',
                 },
                 {
                     name: 'Not sure what to do? Ask.',
                     value: 'Controllers expect questions and will guide you.',
                 },
                 {
-                    name: 'Mods',
-                    value: 'Found in #ops-info. For unofficial operations they may be posted in #ops-chat instead.',
+                    name: 'MODS',
+                    value: 'They can be found in #ops-info unless playing unofficial operations, they may be found in the #ops-chat',
                 },
                 {
                     name: 'Comms',
-                    value: 'Check the Core tab in the SOP for communication structure, examples, and specifics. You\'ll pick most of it up just by listening for a few seconds anyway.',
+                    value: 'For information on Communication structure, examples, and other specifics... a read on Core Tab in the SOP is highly advised, but you should pick this up by listening for a few seconds in the operation.',
                 },
                 {
                     name: 'Full SOP',
-                    value: '[Read it here](https://www.grdnnetwork.com/grdn/sop) if you want to go deeper on anything.',
+                    value: '[Located here](https://www.grdnnetwork.com/grdn/sop) if you want to go deeper on anything.\n\nMost of what you need you\'ll pick up by playing. Once you earn Member after your first op, Core in the SOP is worth a read — it covers everything crew members run into every operation. The rest of the SOP is there when you want it. None of it is required to be read per-say.',
                 },
-            )
-            .setFooter({ text: 'Most of what you need, you\'ll pick up by playing.' });
+            );
 
         await webhook.send({ embeds: [embed] });
         await webhook.delete();
