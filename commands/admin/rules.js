@@ -24,8 +24,9 @@ module.exports = {
         });
 
         const embed = new EmbedBuilder()
-            .setTitle('Rules')
-            .setColor(0x2b2d31)
+            .setTitle(‘GRDN Rules’)
+            .setColor(0x7B2FBE)
+            .setThumbnail(‘https://raw.githubusercontent.com/Grdn-Network/grdn-bot/main/assets/logo.png’)
             .setDescription(
 `1. **Check out <#1474625317359452415>.** That’s where the basics live (setup, roles, how we run ops).
 
@@ -47,7 +48,7 @@ module.exports = {
 
 10. **Have fun — don’t ruin it for others.** That’s the whole point.`
             )
-            .setFooter({ text: 'Last updated' })
+            .setFooter({ text: ‘Last updated’ })
             .setTimestamp();
 
         // Send embed through webhook
