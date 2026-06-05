@@ -60,6 +60,17 @@ const CHANNEL_PUSH_MS = 90_000;
 client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}`);
 
+    // If no session is active in the DB, make sure ops_active is 0.
+    // Prevents stale server name/password showing in the embed after a bot crash or restart.
+    const db = require('./database/db');
+    const hasActiveSession = db.prepare(
+        `SELECT 1 FROM ops_sessions WHERE ended_at IS NULL LIMIT 1`
+    ).get();
+    if (!hasActiveSession) {
+        db.prepare(`UPDATE dispatch_settings SET ops_active = 0 WHERE id = 1`).run();
+        console.log('[Startup] No active session found — ops_active cleared.');
+    }
+
     // Continuously refresh the train board while an op session is active.
     setInterval(async () => {
         for (const [, guild] of client.guilds.cache) {

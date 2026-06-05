@@ -62,11 +62,11 @@ function buildDispatchComponents() {
         new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('startop_btn')
-                .setLabel('Start Official Operation')
+                .setLabel('Start Operation')
                 .setStyle(ButtonStyle.Success),
             new ButtonBuilder()
                 .setCustomId('endop_btn')
-                .setLabel('End Official Operation')
+                .setLabel('End Operation')
                 .setStyle(ButtonStyle.Danger)
         )
     ];
