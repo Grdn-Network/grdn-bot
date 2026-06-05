@@ -36,7 +36,7 @@ module.exports = {
     // Crew Voice Channels — set this to the category ID where Crew VCs should be created
     CREW_VC_CATEGORY_ID: '1474550973878767660',
 
-    // DV Connection
-    DV_HOST: '73.180.75.143',
-    DV_PORT: '7230',
+    // DV Connection — set in .env, never hardcode here
+    DV_HOST: process.env.DV_HOST,
+    DV_PORT: process.env.DV_PORT,
 };

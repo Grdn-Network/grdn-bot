@@ -4,3 +4,4 @@ crash.log
 *.sqlite
 *.sync-conflict-*
 *.bat
+host-tunnels.json
