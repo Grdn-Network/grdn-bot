@@ -39,11 +39,11 @@ module.exports = {
                 },
                 {
                     name: 'When you join',
-                    value: 'Find a locomotive anywhere on the map. Set your train number using `/setcrew` in Discord — you\'ll need a Preferred Name. After that you can use the in-game comms radio.\n\nJump into Ops Radio East and let the controller know where you are and what you\'re doing. Generally you\'ll want to snag a train, then contact dispatch via `/setcrew` or the radio.\n\nIf nobody is controlling your area, you\'re in Dark Territory — grab a job and go, just watch your surroundings.',
+                    value: 'Find a locomotive anywhere on the map. Set your train number with `/setcrew` in Discord, you\'ll need a Preferred Name. After that you can use the in-game comms radio.\n\nJump into Ops Radio East and let the controller know where you are and what you\'re doing. Snag a train and contact dispatch via `/setcrew` or radio.\n\nIf nobody is controlling your area you\'re in Dark Territory. Grab a job and go, just watch your surroundings.',
                 },
                 {
                     name: 'First time using GRDNConnect?',
-                    value: 'Load into the game and try to use the radio. A message will appear in #ops-chat — click the button to link your Steam and Discord accounts. You only do this once.',
+                    value: 'Load into the game and try to use the radio. A message will pop up in #ops-chat, click the button to link your Steam and Discord accounts. You only do this once.',
                 },
                 {
                     name: 'Not sure what to do? Ask.',
@@ -55,14 +55,14 @@ module.exports = {
                 },
                 {
                     name: 'Comms',
-                    value: 'For communication structure, examples, and specifics — a read of the Core tab in the SOP is advised, but you\'ll pick most of it up just by listening for a few seconds in the operation.',
+                    value: 'Check the Core tab in the SOP for communication structure, examples, and specifics. You\'ll pick most of it up just by listening for a few seconds anyway.',
                 },
                 {
                     name: 'Full SOP',
-                    value: '[Read it here](https://www.grdnnetwork.com/grdn/sop) — go deeper on anything.',
+                    value: '[Read it here](https://www.grdnnetwork.com/grdn/sop) if you want to go deeper on anything.',
                 },
             )
-            .setFooter({ text: 'Most of what you need you\'ll pick up by playing.' });
+            .setFooter({ text: 'Most of what you need, you\'ll pick up by playing.' });
 
         await webhook.send({ embeds: [embed] });
         await webhook.delete();
