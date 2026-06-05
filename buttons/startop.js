@@ -1,9 +1,9 @@
 // buttons/startop.js
 // "Start Official Operation" button on the dispatch embed.
-// Delegates to the same handler as /session action:start.
+// Shows a session-type picker before actually opening the session.
 
-const { handleStart } = require('../commands/ops/session');
-const { hasAnyRole }  = require('../utils/permissions');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { hasAnyRole } = require('../utils/permissions');
 const { ADMIN_ROLE, DISPATCH_QUAL_ROLE } = require('../config');
 
 module.exports = {
@@ -16,6 +16,26 @@ module.exports = {
                 flags: 64,
             });
         }
-        return handleStart(interaction);
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('startop:official')
+                .setLabel('Official')
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId('startop:unofficial')
+                .setLabel('Unofficial')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('startop:stress_test')
+                .setLabel('Stress Test')
+                .setStyle(ButtonStyle.Secondary),
+        );
+
+        return interaction.reply({
+            content: '**What type of session is this?**',
+            components: [row],
+            flags: 64,
+        });
     },
 };

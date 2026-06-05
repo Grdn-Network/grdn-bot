@@ -135,14 +135,14 @@ async function syncEmbedFromMod(guild) {
     return { status: `✅ Session open — GRDNConnect at \`${connectUrl}\` returned status: ${gameStatus}.`, interchangeMode };
 }
 
-async function handleStart(interaction) {
+async function handleStart(interaction, typeOverride = null) {
     if (!hasAnyRole(interaction.member, [ADMIN_ROLE, DISPATCH_QUAL_ROLE])) {
         return interaction.reply({ content: '❌ You do not have permission to use this command.', flags: 64 });
     }
 
     await interaction.deferReply({ flags: 64 });
 
-    const sessionType = interaction.options.getString('session_type') ?? 'official';
+    const sessionType = typeOverride ?? interaction.options?.getString?.('session_type') ?? 'official';
     const now = Date.now();
     const sessionId = storage.openSession(interaction.guild.id, interaction.user.id, now, sessionType);
 
