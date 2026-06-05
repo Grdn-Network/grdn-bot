@@ -22,7 +22,6 @@ const loggingConfig                              = require('../../config/logging
 const {
     ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE, DVMP_COMMAND_ROLE,
     DISPATCH_CHANNEL_ID, TRAIN_BOARD_CHANNEL_ID, CREW_VC_CATEGORY_ID,
-    DV_HOST, DV_PORT,
 } = require('../../config');
 
 const FETCH_TIMEOUT_MS = 5000;
@@ -82,8 +81,8 @@ async function syncEmbedFromMod(guild) {
     const stored  = db.prepare(`SELECT remote_link FROM dispatch_settings WHERE id = 1`).get();
     const rdLink  = stored?.remote_link;
     const derived = (rdLink && rdLink !== 'Not set') ? deriveDvConnectUrl(rdLink) : null;
-    const connectUrl = derived ?? `http://${DV_HOST}:${DV_PORT}`;
-    storage.setDvUrl(connectUrl);
+    const connectUrl = derived ?? storage.getDvBaseUrl();
+    if (connectUrl) storage.setDvUrl(connectUrl);
 
     // Step 3 — try to fetch server name / password (and interchange mode) from GRDNConnect.
     // A failure here is non-fatal — session is already marked active.
