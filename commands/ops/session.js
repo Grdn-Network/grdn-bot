@@ -96,7 +96,10 @@ async function syncEmbedFromMod(guild) {
     // A failure here is non-fatal — session is already marked active.
     let serverName, password, gameStatus;
     let interchangeMode = false;
-    try {
+
+    if (!connectUrl) {
+        gameStatus = 'no_url';
+    } else try {
         const res = await fetch(`${connectUrl}/server-info`, { timeout: FETCH_TIMEOUT_MS });
         if (res.ok) {
             const data = await res.json();
@@ -140,6 +143,8 @@ async function syncEmbedFromMod(guild) {
     await msg.edit({ embeds: [buildDispatchEmbed()], components: msg.components });
 
     if (serverName) return { status: `✅ Embed updated — **${serverName}** | ${rdLink || connectUrl}`, interchangeMode };
+    if (gameStatus === 'no_url')
+        return { status: `✅ Session open — no host connection configured. Run \`/setdvconnection\` with your mod URL, or set Server Name and Password manually with \`/editembed\`.`, interchangeMode };
     if (gameStatus === 'unreachable')
         return { status: `✅ Session open — game not reachable yet. Use \`/editembed\` to set Server Name and Password manually.`, interchangeMode };
     return { status: `✅ Session open — GRDNConnect at \`${connectUrl}\` returned status: ${gameStatus}.`, interchangeMode };
@@ -182,13 +187,10 @@ async function handleStart(interaction, typeOverride = null) {
             // Not in host-tunnels — fall back to URL set via /setdvconnection
             connectUrl = storage.getDvBaseUrl();
             if (!connectUrl) {
-                return interaction.editReply(
-                    `❌ No DV connection configured for your account.\n` +
-                    `• To be a regular host: ask an admin to add your ID to \`host-tunnels.json\`\n` +
-                    `• For a one-off session: run \`/setdvconnection\` with your mod URL first`
-                );
+                console.log(`[Session] ${interaction.user.tag} → no DV URL configured, session opening without game connection`);
+            } else {
+                console.log(`[Session] ${interaction.user.tag} → using pre-set URL: ${connectUrl}`);
             }
-            console.log(`[Session] ${interaction.user.tag} → using pre-set URL: ${connectUrl}`);
         }
     } catch (err) {
         return interaction.editReply(`❌ Could not read \`host-tunnels.json\`: ${err.message}`);
