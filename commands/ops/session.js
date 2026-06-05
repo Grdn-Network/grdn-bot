@@ -112,8 +112,18 @@ async function syncEmbedFromMod(guild) {
     }
 
     // Step 4 — write whatever info we got into the DB.
-    if (serverName) db.prepare(`UPDATE dispatch_settings SET server_name     = ? WHERE id = 1`).run(serverName);
-    if (password)   db.prepare(`UPDATE dispatch_settings SET server_password = ? WHERE id = 1`).run(password);
+    if (serverName) {
+        db.prepare(`UPDATE dispatch_settings SET server_name     = ? WHERE id = 1`).run(serverName);
+    } else {
+        // Game unreachable — clear stale server name so old session info doesn't show
+        db.prepare(`UPDATE dispatch_settings SET server_name = 'Not set' WHERE id = 1`).run();
+    }
+    if (password) {
+        db.prepare(`UPDATE dispatch_settings SET server_password = ? WHERE id = 1`).run(password);
+    } else {
+        // Same for password — don't carry over a stale value from a previous session
+        db.prepare(`UPDATE dispatch_settings SET server_password = 'Not set' WHERE id = 1`).run();
+    }
     if (rdLink && rdLink !== 'Not set')
         db.prepare(`UPDATE dispatch_settings SET remote_link = ? WHERE id = 1`).run(rdLink);
 
@@ -131,7 +141,7 @@ async function syncEmbedFromMod(guild) {
 
     if (serverName) return { status: `✅ Embed updated — **${serverName}** | ${rdLink || connectUrl}`, interchangeMode };
     if (gameStatus === 'unreachable')
-        return { status: `✅ Session open — game offline or not yet started (embed updated without server info).`, interchangeMode };
+        return { status: `✅ Session open — game not reachable yet. Use \`/editembed\` to set Server Name and Password manually.`, interchangeMode };
     return { status: `✅ Session open — GRDNConnect at \`${connectUrl}\` returned status: ${gameStatus}.`, interchangeMode };
 }
 
