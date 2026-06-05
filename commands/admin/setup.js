@@ -25,7 +25,7 @@ module.exports = {
 
         const webhook = await channel.createWebhook({
             name: 'GRDN Ops',
-            // avatar: 'https://...' — needs a permanent URL (Discord CDN links expire)
+            avatar: 'https://raw.githubusercontent.com/Grdn-Network/grdn-bot/main/assets/logo.png',
         });
 
         const embed = new EmbedBuilder()

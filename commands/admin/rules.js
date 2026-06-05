@@ -20,7 +20,7 @@ module.exports = {
         // Create webhook
         const webhook = await channel.createWebhook({
             name: 'GRDN Ops',
-            avatar: 'https://cdn.discordapp.com/attachments/1476419181271322784/1476425743440285697/GRDN_NET_STD_WHITE_BLK_BCKG2.png?ex=69a1141f&is=699fc29f&hm=c9cac75f14ebb2013dae3c765fcaeaeede143be4ea7b0f7d3b7bf2e51b679025&' // optional — you can add an image URL here
+            avatar: 'https://raw.githubusercontent.com/Grdn-Network/grdn-bot/main/assets/logo.png',
         });
 
         const embed = new EmbedBuilder()
