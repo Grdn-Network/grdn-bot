@@ -213,23 +213,25 @@ module.exports = function startServer(client) {
                 // If you've opted in, you hear every defect across the whole session.
                 const allCrew = storage.getAllCrew(guild.id);
 
+                const alertedChannels = new Set();
                 for (const c of allCrew) {
                     const pref = db.prepare(
                         `SELECT enabled FROM defect_prefs WHERE user_id = ?`
                     ).get(c.userId);
 
-                    if (!pref?.enabled) continue; // always respect opt-in
+                    if (!pref?.enabled) continue;
 
                     const member = await guild.members.fetch(c.userId).catch(() => null);
-                    if (!member?.voice?.channel) continue;
+                    const vc = member?.voice?.channel;
+                    if (!vc || alertedChannels.has(vc.id)) continue;
 
-                    console.log(`[Defect] ${defectType} (train ${trainNumber}) → ${c.userId}`);
+                    alertedChannels.add(vc.id);
+                    console.log(`[Defect] ${defectType} (train ${trainNumber}) → ${c.userId} in ${vc.name}`);
 
-                    if (alertTrain) {
-                        alertTrain(guild, trainNumber, defectType, detail ?? null).catch(err =>
+                    if (alertChannel) {
+                        alertChannel(guild, vc.id, trainNumber, defectType, detail ?? null).catch(err =>
                             console.error('[Defect] Voice alert failed:', err.message)
                         );
-                        break; // one voice alert per event — bot joins one VC
                     }
                 }
             }
