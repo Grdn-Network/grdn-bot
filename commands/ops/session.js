@@ -151,7 +151,7 @@ async function syncEmbedFromMod(guild) {
 }
 
 async function handleStart(interaction, typeOverride = null) {
-    if (!hasAnyRole(interaction.member, [ADMIN_ROLE, DISPATCH_QUAL_ROLE])) {
+    if (!hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE])) {
         return interaction.reply({ content: '❌ You do not have permission to use this command.', flags: 64 });
     }
 
