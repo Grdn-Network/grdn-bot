@@ -4,15 +4,15 @@
 
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { hasAnyRole } = require('../utils/permissions');
-const { ADMIN_ROLE, DISPATCH_QUAL_ROLE } = require('../config');
+const { ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE } = require('../config');
 
 module.exports = {
     customId: 'startop_btn',
 
     async execute(interaction) {
-        if (!hasAnyRole(interaction.member, [ADMIN_ROLE, DISPATCH_QUAL_ROLE])) {
+        if (!hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE])) {
             return interaction.reply({
-                content: '❌ Only admins and dispatch-qualified staff can start an operation.',
+                content: '❌ Only admins and hosts can start an operation.',
                 flags: 64,
             });
         }
