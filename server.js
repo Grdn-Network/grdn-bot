@@ -111,9 +111,14 @@ module.exports = function startServer(client) {
     app.post('/radio-change', async (req, res) => {
         const { vcId, steamId, trainNumber } = req.body ?? {};
         if (!vcId || (!steamId && !trainNumber)) {
-            return res.status(400).json({ error: 'Missing vcId (and need steamId or trainNumber)' });
+            return res.status(400).json({ ok: false, status: 'bad_request' });
         }
-        res.json({ ok: true });
+
+        // Resolve a single outcome so the in-game radio can show *why* a switch did
+        // or didn't happen, instead of always claiming success. Higher rank wins.
+        let status = 'no_match';
+        const rank = { no_match: 0, no_member: 1, not_linked: 2, not_in_voice: 3, already_there: 4, moved: 5 };
+        const note = s => { if (rank[s] > rank[status]) status = s; };
 
         try {
             for (const [, guild] of client.guilds.cache) {
@@ -125,19 +130,24 @@ module.exports = function startServer(client) {
                         const member = await guild.members.fetch(link.discordId).catch(() => null);
                         if (!member) {
                             console.log(`[Radio] Steam ${steamId}: member not found in guild`);
+                            note('no_member');
                         } else if (!member.voice?.channel) {
                             console.log(`[Radio] ${member.displayName}: not in a voice channel — skipped`);
+                            note('not_in_voice');
                         } else if (member.voice.channel.id === vcId) {
                             console.log(`[Radio] ${member.displayName}: already in target channel — skipped`);
+                            note('already_there');
                         } else {
                             await member.voice.setChannel(vcId).catch(err =>
                                 console.error(`[Radio] Failed to move ${link.discordId}:`, err.message)
                             );
                             console.log(`[Radio] Moved ${member.displayName} (steam ${steamId}) → ${vcId}`);
+                            note('moved');
                         }
                         continue; // steam link found — don't fall through to train number
                     }
                     console.log(`[Radio] Steam ${steamId}: not linked yet — falling back to train number`);
+                    note('not_linked');
                 }
 
                 // ── 2. Train number fallback ──────────────────────────────────
@@ -152,25 +162,34 @@ module.exports = function startServer(client) {
                     const member = await guild.members.fetch(c.userId).catch(() => null);
                     if (!member) {
                         console.log(`[Radio] ${c.preferredName} (${c.userId}): not found in guild`);
+                        note('no_member');
                         continue;
                     }
                     if (!member.voice?.channel) {
                         console.log(`[Radio] ${c.preferredName}: not in a voice channel — skipped`);
+                        note('not_in_voice');
                         continue;
                     }
                     if (member.voice.channel.id === vcId) {
                         console.log(`[Radio] ${c.preferredName}: already in target channel — skipped`);
+                        note('already_there');
                         continue;
                     }
                     await member.voice.setChannel(vcId).catch(err =>
                         console.error(`[Radio] Failed to move ${c.userId}:`, err.message)
                     );
                     console.log(`[Radio] Moved ${c.preferredName} (train ${trainNumber}) → ${vcId}`);
+                    note('moved');
                 }
             }
         } catch (err) {
             console.error('[Radio] Error:', err.message);
+            return res.json({ ok: false, status: 'error' });
         }
+
+        const ok = status === 'moved' || status === 'already_there';
+        console.log(`[Radio] vcId=${vcId} → status=${status}`);
+        res.json({ ok, status });
     });
 
     // ── GET /radio-channels ───────────────────────────────────────────────────
