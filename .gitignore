@@ -5,3 +5,4 @@ crash.log
 *.sync-conflict-*
 *.bat
 host-tunnels.json
+purged_media/

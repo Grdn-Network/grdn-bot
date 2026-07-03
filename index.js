@@ -6,6 +6,7 @@ const { CRASH_LOG_CHANNEL_ID, ADMIN_ROLE, TRAIN_BOARD_CHANNEL_ID, CREW_VC_CATEGO
 const fetch = require('node-fetch');
 const storage = require('./database/storage');
 const { updateTrainBoard } = require('./utils/trainBoard');
+const { runRetention } = require('./utils/purgeForensics');
 
 const CRASH_LOG_PATH = 'C:\\GRDN\\bot\\crash.log';
 fs.mkdirSync(path.dirname(CRASH_LOG_PATH), { recursive: true });
@@ -71,6 +72,10 @@ client.once('ready', () => {
         db.prepare(`UPDATE dispatch_settings SET ops_active = 0 WHERE id = 1`).run();
         console.log('[Startup] No active session found — ops_active cleared.');
     }
+
+    // Prune old purge forensics: saved media after 7 days, records after 90.
+    runRetention();
+    setInterval(runRetention, 24 * 60 * 60 * 1000);
 
     // Continuously refresh the train board while an op session is active.
     setInterval(async () => {

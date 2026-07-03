@@ -1,10 +1,9 @@
 // buttons/scamReview.js
 // Handles the scam-alert action buttons: Approve & Reinstate, Purge User, Dismiss.
 
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const storage = require('../database/storage');
 const { hasAnyRole } = require('../utils/permissions');
-const { purgeAndBanUser } = require('../utils/purge');
 const { ADMIN_ROLE, DVMP_COMMAND_ROLE } = require('../config');
 const fetch = require('node-fetch');
 
@@ -66,7 +65,7 @@ async function reinstate(interaction, heldId) {
                     files.push(new AttachmentBuilder(buf, { name: a.name || 'file' }));
                 }
             } catch {
-                // ignore — handled by fallback below
+                // ignore; handled by the fallback below
             }
         }
         if (!files.length && held.attachments[0]) embed.setImage(held.attachments[0].url);
@@ -83,28 +82,23 @@ async function reinstate(interaction, heldId) {
     await resolveAlert(interaction, `✅ Reinstated by ${interaction.user.username}`, ButtonStyle.Success);
 }
 
+// The Purge button opens a modal to collect a reason. The purge + ban itself
+// runs in modals/scamPurgeModal.js once the admin submits.
 async function purge(interaction, userId) {
-    await interaction.deferUpdate();
+    const modal = new ModalBuilder()
+        .setCustomId(`scam_purge_modal:${userId}:${interaction.message.id}`)
+        .setTitle('Purge and ban user');
 
-    const target = await interaction.client.users.fetch(userId).catch(() => null);
-    const { deletedCount } = await purgeAndBanUser(
-        interaction.guild, userId, `Scam review purge by ${interaction.user.tag}`
-    );
+    const reasonInput = new TextInputBuilder()
+        .setCustomId('reason')
+        .setLabel('Reason for the ban')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(300)
+        .setPlaceholder('e.g. Mr Beast scam image and lfg ping');
 
-    // Mirror /purgeuser exactly, including its audit-log event
-    if (target) {
-        interaction.client.emit('purgeUser', {
-            moderator: interaction.user,
-            target,
-            deletedCount,
-        });
-    }
-
-    await resolveAlert(
-        interaction,
-        `🧹 Purged & banned by ${interaction.user.username} (${deletedCount} msg${deletedCount !== 1 ? 's' : ''})`,
-        ButtonStyle.Danger
-    );
+    modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
+    await interaction.showModal(modal);
 }
 
 async function dismiss(interaction, heldId) {

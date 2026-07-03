@@ -8,6 +8,7 @@ const { SlashCommandBuilder } = require('discord.js');
 const storage = require('../../database/storage');
 const { hasAnyRole } = require('../../utils/permissions');
 const { ADMIN_ROLE } = require('../../config');
+const { startPurge, capturePurgedMessage, finishPurge } = require('../../utils/purgeForensics');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -43,7 +44,9 @@ module.exports = {
             flags: 64,
         });
 
+        const purgeId = await startPurge({ guild, target, moderator: interaction.user, reason });
         let deletedCount = 0;
+        const channels = new Set();
 
         for (const [, channel] of guild.channels.cache) {
             if (!channel.isTextBased()) continue;
@@ -51,8 +54,10 @@ module.exports = {
                 const messages = await channel.messages.fetch({ limit: 100 });
                 const targets = messages.filter(msg => msg.author?.id === target.id);
                 for (const msg of targets.values()) {
+                    await capturePurgedMessage(purgeId, msg);
                     await msg.delete().catch(() => {});
                     deletedCount++;
+                    channels.add(channel.id);
                 }
             } catch {
                 // Skip channels the bot cannot access
@@ -63,17 +68,21 @@ module.exports = {
 
         storage.removeCrew(target.id);
 
+        finishPurge(purgeId, { deletedCount, channelsAffected: channels.size });
+
         interaction.client.emit('purgeUser', {
             moderator: interaction.user,
             target,
             deletedCount,
+            channelsAffected: channels.size,
+            purgeId,
         });
 
         return interaction.editReply({
             content:
                 `Banned **${target.username}**.\n` +
-                `Messages deleted: **${deletedCount}**\n` +
-                `Crew registration removed.`,
+                `Messages deleted: **${deletedCount}** across **${channels.size}** channel${channels.size !== 1 ? 's' : ''}.\n` +
+                `Crew registration removed. Review with \`/purged id:${purgeId}\`.`,
         });
     },
 };

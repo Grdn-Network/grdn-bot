@@ -1,19 +1,24 @@
 // utils/purge.js
-// Shared "purge + ban" routine used by both /purgeuser ban and the
-// scam-review "Purge User" button, so there's a single source of truth.
+// Purge + ban routine used by the scam-review Purge button (via its reason
+// modal). Records forensics before deleting each message so the purge is
+// reviewable later with /purged.
 
 const storage = require('../database/storage');
+const { startPurge, capturePurgedMessage, finishPurge } = require('./purgeForensics');
 
 /**
- * Delete a user's recent messages across all text channels, ban them, and
- * remove their crew registration.
- * @param {import('discord.js').Guild} guild
- * @param {string} targetId
- * @param {string} reason
- * @returns {Promise<{ deletedCount: number }>}
+ * @returns {Promise<{ deletedCount: number, channelsAffected: number, purgeId: number }>}
  */
-async function purgeAndBanUser(guild, targetId, reason) {
+async function purgeAndBanUser({ guild, targetId, targetTag, moderator, reason }) {
+    const purgeId = await startPurge({
+        guild,
+        target: { id: targetId, tag: targetTag },
+        moderator,
+        reason,
+    });
+
     let deletedCount = 0;
+    const channels = new Set();
 
     for (const [, channel] of guild.channels.cache) {
         if (!channel.isTextBased?.()) continue;
@@ -21,8 +26,10 @@ async function purgeAndBanUser(guild, targetId, reason) {
             const messages = await channel.messages.fetch({ limit: 100 });
             const targets = messages.filter(msg => msg.author?.id === targetId);
             for (const msg of targets.values()) {
+                await capturePurgedMessage(purgeId, msg);
                 await msg.delete().catch(() => {});
                 deletedCount++;
+                channels.add(channel.id);
             }
         } catch {
             // Skip channels the bot cannot access
@@ -32,7 +39,8 @@ async function purgeAndBanUser(guild, targetId, reason) {
     await guild.members.ban(targetId, { reason }).catch(() => {});
     storage.removeCrew(targetId);
 
-    return { deletedCount };
+    finishPurge(purgeId, { deletedCount, channelsAffected: channels.size });
+    return { deletedCount, channelsAffected: channels.size, purgeId };
 }
 
 module.exports = { purgeAndBanUser };

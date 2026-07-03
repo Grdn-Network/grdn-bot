@@ -71,6 +71,81 @@ function setModerationEnabled(on) {
     setSetting('moderation_enabled', on ? '1' : '0');
 }
 
+// Purge forensics: record what a purge/ban removed so an admin can review it later.
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS purges (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id          TEXT,
+        target_id         TEXT NOT NULL,
+        target_tag        TEXT,
+        moderator_id      TEXT,
+        moderator_tag     TEXT,
+        deleted_count     INTEGER NOT NULL DEFAULT 0,
+        channels_affected INTEGER NOT NULL DEFAULT 0,
+        reason            TEXT,
+        created_at        INTEGER NOT NULL
+    )
+`).run();
+
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS purged_messages (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        purge_id       INTEGER NOT NULL,
+        channel_id     TEXT,
+        channel_name   TEXT,
+        content        TEXT,
+        attachments    TEXT,
+        msg_created_at INTEGER
+    )
+`).run();
+
+function createPurge({ guildId, targetId, targetTag, moderatorId, moderatorTag, reason }) {
+    const info = db.prepare(`
+        INSERT INTO purges (guild_id, target_id, target_tag, moderator_id, moderator_tag, reason, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(guildId ?? null, targetId, targetTag ?? null, moderatorId ?? null, moderatorTag ?? null, reason ?? null, Date.now());
+    return info.lastInsertRowid;
+}
+
+function recordPurgedMessage(purgeId, { channelId, channelName, content, attachments, msgCreatedAt }) {
+    db.prepare(`
+        INSERT INTO purged_messages (purge_id, channel_id, channel_name, content, attachments, msg_created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    `).run(purgeId, channelId ?? null, channelName ?? null, content ?? '', JSON.stringify(attachments ?? []), msgCreatedAt ?? null);
+}
+
+function finalizePurge(purgeId, { deletedCount, channelsAffected }) {
+    db.prepare(`UPDATE purges SET deleted_count = ?, channels_affected = ? WHERE id = ?`)
+      .run(deletedCount ?? 0, channelsAffected ?? 0, purgeId);
+}
+
+function getPurgeById(id) {
+    return db.prepare(`SELECT * FROM purges WHERE id = ?`).get(id) || null;
+}
+
+function getLatestPurgeForUser(targetId) {
+    return db.prepare(`SELECT * FROM purges WHERE target_id = ? ORDER BY created_at DESC LIMIT 1`).get(targetId) || null;
+}
+
+function getPurgeMessages(purgeId) {
+    return db.prepare(`SELECT * FROM purged_messages WHERE purge_id = ? ORDER BY id ASC`).all(purgeId)
+        .map(r => ({ ...r, attachments: JSON.parse(r.attachments || '[]') }));
+}
+
+function listRecentPurges(limit = 10) {
+    return db.prepare(`SELECT * FROM purges ORDER BY created_at DESC LIMIT ?`).all(limit);
+}
+
+function getPurgesOlderThan(days) {
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    return db.prepare(`SELECT id FROM purges WHERE created_at < ?`).all(cutoff).map(r => r.id);
+}
+
+function deletePurge(id) {
+    db.prepare(`DELETE FROM purged_messages WHERE purge_id = ?`).run(id);
+    db.prepare(`DELETE FROM purges WHERE id = ?`).run(id);
+}
+
 // Steam link table — maps Steam ID64 → Discord user ID (one-time link, permanent)
 db.prepare(`
     CREATE TABLE IF NOT EXISTS steam_links (
@@ -825,4 +900,14 @@ module.exports = {
     setSetting,
     isModerationEnabled,
     setModerationEnabled,
+    // Purge forensics
+    createPurge,
+    recordPurgedMessage,
+    finalizePurge,
+    getPurgeById,
+    getLatestPurgeForUser,
+    getPurgeMessages,
+    listRecentPurges,
+    getPurgesOlderThan,
+    deletePurge,
 };
