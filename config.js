@@ -44,7 +44,7 @@ module.exports = {
     SCAM_MODERATION_ENABLED: true,
 
     // @lfg role, locked in Discord so only the bot can ping it; members use /lfg
-    LFG_ROLE: '1513233471483412642',
+    LFG_ROLE: '1478630839381135404',
     // Channel where /lfg is allowed (and where it posts)
     LFG_CHANNEL_ID: '1477113793099337779',
     // Minimum wait between a user's /lfg pings
