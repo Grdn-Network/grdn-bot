@@ -7,6 +7,8 @@ module.exports = {
     YARD_CHANNEL_ID: '1474695726008369194',
     CRASH_LOG_CHANNEL_ID: '1503194667255074846', //dvmp-command
     ADMIN_CHANNEL_ID: '1474624720073920563',
+    OPS_CHAT_CHANNEL_ID: '1498270262632910868', // #ops-chat; in-game commands must run here
+    OPS_CATEGORY_ID: '1474550973878767660',     // ops category; /session allowed anywhere under it
 
     // Role IDs
     ADMIN_ROLE: '1474625834798022828',

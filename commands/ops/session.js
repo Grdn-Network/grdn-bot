@@ -21,8 +21,9 @@ const { sendLog }                                = require('../../logging/logHel
 const loggingConfig                              = require('../../config/logging.json');
 const {
     ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE, DVMP_COMMAND_ROLE,
-    DISPATCH_CHANNEL_ID, TRAIN_BOARD_CHANNEL_ID, CREW_VC_CATEGORY_ID,
+    DISPATCH_CHANNEL_ID, TRAIN_BOARD_CHANNEL_ID, CREW_VC_CATEGORY_ID, OPS_CATEGORY_ID,
 } = require('../../config');
+const { requireCategory } = require('../../utils/commandChannel');
 
 const FETCH_TIMEOUT_MS = 5000;
 
@@ -55,6 +56,8 @@ module.exports = {
         ),
 
     async execute(interaction) {
+        if (!await requireCategory(interaction, OPS_CATEGORY_ID)) return;
+
         const action = interaction.options.getString('action');
         if (action === 'start') return handleStart(interaction);
         if (action === 'end')   return handleEnd(interaction);

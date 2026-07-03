@@ -6,6 +6,8 @@ const { SlashCommandBuilder } = require('discord.js');
 const fetch   = require('node-fetch');
 const storage = require('../../database/storage');
 const { classifyLeg } = require('../../utils/statsHelper');
+const { OPS_CHAT_CHANNEL_ID } = require('../../config');
+const { requireChannel } = require('../../utils/commandChannel');
 
 const FETCH_TIMEOUT_MS = 5000;
 
@@ -20,6 +22,8 @@ module.exports = {
         ),
 
     async execute(interaction) {
+        if (!await requireChannel(interaction, OPS_CHAT_CHANNEL_ID)) return;
+
         const baseUrl = storage.getDvBaseUrl();
         if (!baseUrl)
             return interaction.reply({
