@@ -6,6 +6,71 @@ const db = require('./db');
 // Ensure required tables exist
 // ===============================
 
+// Held messages: scam-scanner captures removed content here so an admin can
+// reinstate it (undo delete + timeout) with one click.
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS held_messages (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id    TEXT NOT NULL,
+        user_id     TEXT NOT NULL,
+        channel_id  TEXT NOT NULL,
+        content     TEXT,
+        attachments TEXT,
+        tier        TEXT NOT NULL,
+        reason      TEXT,
+        created_at  INTEGER NOT NULL
+    )
+`).run();
+
+function addHeldMessage({ guildId, userId, channelId, content, attachments, tier, reason }) {
+    const info = db.prepare(`
+        INSERT INTO held_messages (guild_id, user_id, channel_id, content, attachments, tier, reason, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(guildId, userId, channelId, content ?? '', JSON.stringify(attachments ?? []), tier, reason ?? '', Date.now());
+    return info.lastInsertRowid;
+}
+
+function getHeldMessage(id) {
+    const row = db.prepare(`SELECT * FROM held_messages WHERE id = ?`).get(id);
+    if (!row) return null;
+    return { ...row, attachments: JSON.parse(row.attachments || '[]') };
+}
+
+function deleteHeldMessage(id) {
+    db.prepare(`DELETE FROM held_messages WHERE id = ?`).run(id);
+}
+
+// Generic key/value settings, used for the live moderation toggle, etc.
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS bot_settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT
+    )
+`).run();
+
+function getSetting(key, fallback = null) {
+    const row = db.prepare(`SELECT value FROM bot_settings WHERE key = ?`).get(key);
+    return row ? row.value : fallback;
+}
+
+function setSetting(key, value) {
+    db.prepare(`
+        INSERT INTO bot_settings (key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run(key, String(value));
+}
+
+// Returns true/false if the toggle has been set, or null if never set
+// (so callers can fall back to the config default).
+function isModerationEnabled() {
+    const v = getSetting('moderation_enabled', null);
+    return v === null ? null : v === '1';
+}
+
+function setModerationEnabled(on) {
+    setSetting('moderation_enabled', on ? '1' : '0');
+}
+
 // Steam link table — maps Steam ID64 → Discord user ID (one-time link, permanent)
 db.prepare(`
     CREATE TABLE IF NOT EXISTS steam_links (
@@ -751,4 +816,13 @@ module.exports = {
     getSessionStats,
     getUserLifetimeStats,
     getAllLifetimeStats,
+    // Held messages (scam review)
+    addHeldMessage,
+    getHeldMessage,
+    deleteHeldMessage,
+    // Settings / moderation toggle
+    getSetting,
+    setSetting,
+    isModerationEnabled,
+    setModerationEnabled,
 };

@@ -49,6 +49,7 @@ loadLogging(client);
 // Event handlers (functional, not audit loggers)
 require('./utils/crewVCManager')(client);
 require('./events/opsVoiceTracker')(client);
+require('./events/scamScanner')(client);
 
 // How often to poll GRDNConnect for live loco data (ms)
 const TRAIN_BOARD_POLL_MS = 30_000;

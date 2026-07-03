@@ -1,5 +1,6 @@
 const { EmbedBuilder } = require('discord.js');
 const config = require('../config/logging.json');
+const mainConfig = require('../config');
 const { sendLog } = require('./logHelper');
 
 const joinTimes = [];
@@ -22,6 +23,15 @@ module.exports = (client) => {
                 .setTimestamp();
 
             sendLog(client, config.logChannel, embed);
+
+            // Ping admins so a raid gets eyes immediately
+            const alertCh = client.channels.cache.get(mainConfig.SCAM_ALERT_CHANNEL);
+            if (alertCh) {
+                alertCh.send({
+                    content: `<@&${mainConfig.SCAM_ALERT_ROLE}> 🚨 Possible raid: **${joinTimes.length} joins** in 10 min. Check new members.`,
+                    allowedMentions: { roles: [mainConfig.SCAM_ALERT_ROLE] },
+                }).catch(() => {});
+            }
         }
     });
 };

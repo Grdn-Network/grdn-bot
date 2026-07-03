@@ -36,4 +36,44 @@ module.exports = {
     // Crew Voice Channels — set this to the category ID where Crew VCs should be created
     CREW_VC_CATEGORY_ID: '1474550973878767660',
 
+    // ── Security / anti-scam ────────────────────────────────────────────
+    // Default on/off for the scanner at first run. /moderation stores a live
+    // override in the DB, so you can toggle it without a restart.
+    SCAM_MODERATION_ENABLED: true,
+
+    // @lfg role, locked in Discord so only the bot can ping it; members use /lfg
+    LFG_ROLE: '1513233471483412642',
+    // Channel where /lfg is allowed (and where it posts)
+    LFG_CHANNEL_ID: '1477113793099337779',
+    // Minimum wait between a user's /lfg pings
+    LFG_COOLDOWN_MS: 20 * 60 * 1000,
+
+    // Channels where newcomers may post media without being flagged
+    MEDIA_CHANNELS: [
+        '1479265847716348097', // #media (DVMP)
+        '1476901402038239262', // #off-topic (anything goes except NSFW)
+    ],
+
+    // Where scam alerts are posted, and which role gets pinged to review
+    SCAM_ALERT_CHANNEL: '1474624720073920563', // #admin (== ADMIN_CHANNEL_ID)
+    SCAM_ALERT_ROLE: '1474625834798022828',    // @Admin (== ADMIN_ROLE)
+
+    // Staff are skipped by the scanner for now. Flip to false to include the
+    // burst / mass-mention check for compromised staff accounts.
+    STAFF_EXEMPT: true,
+
+    // Timeout durations applied on medium / high confidence
+    SCAM_TIMEOUT_SHORT_MS: 15 * 60 * 1000,      // medium
+    SCAM_TIMEOUT_LONG_MS: 24 * 60 * 60 * 1000,  // high
+
+    // Burst detection: the same message from one user appearing in this many
+    // DISTINCT channels within the window escalates to high and deletes all copies.
+    SCAM_BURST_WINDOW_MS: 60 * 1000,
+    SCAM_BURST_THRESHOLD: 2,
+
+    // Optional: auto-strip a "member" role whenever a user also has NEWCOMER
+    // (deferred: old invite links wrongly grant member). Set the ID + true to enable.
+    MEMBER_ROLE: null,
+    MEMBER_AUTOSTRIP: false,
+
 };
