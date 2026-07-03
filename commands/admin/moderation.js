@@ -10,10 +10,17 @@ const storage = require('../../database/storage');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('moderation')
-        .setDescription('Turn the anti-scam scanner on or off (no restart needed).')
-        .addSubcommand(s => s.setName('on').setDescription('Enable the scanner'))
-        .addSubcommand(s => s.setName('off').setDescription('Disable the scanner'))
-        .addSubcommand(s => s.setName('status').setDescription('Show whether the scanner is on')),
+        .setDescription('Turn the anti-scam scanner on or off, or check its status.')
+        .addStringOption(opt =>
+            opt.setName('action')
+               .setDescription('What to do')
+               .setRequired(true)
+               .addChoices(
+                   { name: 'on', value: 'on' },
+                   { name: 'off', value: 'off' },
+                   { name: 'status', value: 'status' },
+               )
+        ),
 
     async execute(interaction) {
         if (!hasAnyRole(interaction.member, ADMIN_ROLE)) {
@@ -23,9 +30,9 @@ module.exports = {
             });
         }
 
-        const sub = interaction.options.getSubcommand();
+        const action = interaction.options.getString('action');
 
-        if (sub === 'status') {
+        if (action === 'status') {
             const v = storage.isModerationEnabled();
             const on = v === null ? SCAM_MODERATION_ENABLED : v;
             return interaction.reply({
@@ -34,7 +41,7 @@ module.exports = {
             });
         }
 
-        const on = sub === 'on';
+        const on = action === 'on';
         storage.setModerationEnabled(on);
         return interaction.reply({
             content: `Anti-scam scanner is now **${on ? 'ON' : 'OFF'}**.`,
