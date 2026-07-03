@@ -10,9 +10,9 @@
 //     Optionally scoped to a single channel. Admin only.
 
 const { SlashCommandBuilder, ChannelType } = require('discord.js');
+const storage = require('../../database/storage');
 const { hasAnyRole } = require('../../utils/permissions');
 const { ADMIN_ROLE } = require('../../config');
-const { purgeAndBanUser } = require('../../utils/purge');
 
 // Maps choice values → milliseconds
 const TIMEFRAMES = {
@@ -92,9 +92,27 @@ async function handleBan(interaction) {
         flags: 64,
     });
 
-    const { deletedCount } = await purgeAndBanUser(
-        guild, target.id, `Purged and banned by ${interaction.user.tag}`
-    );
+    let deletedCount = 0;
+
+    for (const [, channel] of guild.channels.cache) {
+        if (!channel.isTextBased()) continue;
+        try {
+            const messages = await channel.messages.fetch({ limit: 100 });
+            const targets  = messages.filter(msg => msg.author?.id === target.id);
+            for (const msg of targets.values()) {
+                await msg.delete().catch(() => {});
+                deletedCount++;
+            }
+        } catch {
+            // Skip channels the bot cannot access
+        }
+    }
+
+    await guild.members.ban(target.id, {
+        reason: `Purged and banned by ${interaction.user.tag}`,
+    });
+
+    storage.removeCrew(target.id);
 
     interaction.client.emit('purgeUser', {
         moderator: interaction.user,
