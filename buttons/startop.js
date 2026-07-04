@@ -5,13 +5,13 @@
 
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { hasAnyRole } = require('../utils/permissions');
-const { ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE, MEMBER_ROLE } = require('../config');
+const { ADMIN_ROLE, HOST_ROLE, MEMBER_ROLE } = require('../config');
 
 module.exports = {
     customId: 'startop_btn',
 
     async execute(interaction) {
-        const canOfficial = hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE]);
+        const canOfficial = hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE]);
         const canUnofficial = canOfficial || hasAnyRole(interaction.member, MEMBER_ROLE);
 
         if (!canUnofficial) {

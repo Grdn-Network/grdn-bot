@@ -78,11 +78,13 @@ module.exports = {
 
 // Who can open a given session type. Unofficial is open to any member; official
 // and stress test stay restricted to admins, hosts, and dispatch-qualified staff.
+// Hosts run sessions. Controller Qual (dispatch) does not. Members may open an
+// unofficial session; official and stress test stay with hosts and admins.
 function canStartSession(member, sessionType) {
     if (sessionType === 'unofficial') {
-        return hasAnyRole(member, [MEMBER_ROLE, ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE]);
+        return hasAnyRole(member, [MEMBER_ROLE, ADMIN_ROLE, HOST_ROLE]);
     }
-    return hasAnyRole(member, [ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE]);
+    return hasAnyRole(member, [ADMIN_ROLE, HOST_ROLE]);
 }
 
 // ── start ─────────────────────────────────────────────────────────────────────
