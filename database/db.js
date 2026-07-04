@@ -103,6 +103,45 @@ try { db.prepare(`ALTER TABLE mods ADD COLUMN official INTEGER NOT NULL DEFAULT 
 db.prepare(`UPDATE mods SET official = 1 WHERE official IS NULL`).run();
 
 /* -----------------------------------------------------
+   MOD PRESETS
+   Each preset stores its own full snapshot of the mod list
+   (name, url, version, note, official, order), so hosts can swap
+   whole setups and every mod's link/version is preserved per preset.
+   Exactly one preset is active; the live `mods` table mirrors it.
+----------------------------------------------------- */
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS presets (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        active     INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+    )
+`).run();
+
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS preset_mods (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        preset_id  INTEGER NOT NULL,
+        name       TEXT,
+        url        TEXT,
+        version    TEXT,
+        note       TEXT,
+        official   INTEGER NOT NULL DEFAULT 1,
+        sort_order INTEGER NOT NULL DEFAULT 0
+    )
+`).run();
+
+// Seed the default "Shared Preset" from the current mods on first run
+if (db.prepare(`SELECT COUNT(*) AS c FROM presets`).get().c === 0) {
+    const info = db.prepare(`INSERT INTO presets (name, active, created_at) VALUES ('Shared Preset', 1, ?)`).run(Date.now());
+    const presetId = info.lastInsertRowid;
+    const seedMods = db.prepare(`SELECT name, url, version, note, official, sort_order FROM mods ORDER BY sort_order, id`).all();
+    const insSeed = db.prepare(`INSERT INTO preset_mods (preset_id, name, url, version, note, official, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    for (const m of seedMods) insSeed.run(presetId, m.name, m.url, m.version, m.note, m.official, m.sort_order);
+    console.log(`[Presets] Seeded "Shared Preset" from ${seedMods.length} current mod(s).`);
+}
+
+/* -----------------------------------------------------
    DEFECT ALERT PREFERENCES
    Users opt IN to hotbox/defect alerts (default off).
 ----------------------------------------------------- */
