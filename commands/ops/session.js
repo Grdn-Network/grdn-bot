@@ -69,11 +69,19 @@ module.exports = {
     // Exposed for button handlers
     handleStart,
     handleEnd,
+    canStartSession,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HANDLERS
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Who can open a given session type. Unofficial is open to any member; official
+// and stress test stay restricted to admins, hosts, and dispatch-qualified staff.
+function canStartSession(member, sessionType) {
+    if (sessionType === 'unofficial') return true;
+    return hasAnyRole(member, [ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE]);
+}
 
 // ── start ─────────────────────────────────────────────────────────────────────
 
@@ -154,13 +162,17 @@ async function syncEmbedFromMod(guild) {
 }
 
 async function handleStart(interaction, typeOverride = null) {
-    if (!hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE])) {
-        return interaction.reply({ content: '❌ You do not have permission to use this command.', flags: 64 });
+    const sessionType = typeOverride ?? interaction.options?.getString?.('session_type') ?? 'official';
+
+    if (!canStartSession(interaction.member, sessionType)) {
+        const label = { official: 'official', stress_test: 'stress test', unofficial: 'unofficial' }[sessionType] ?? sessionType;
+        return interaction.reply({
+            content: `❌ Only admins, hosts, and dispatch-qualified members can start ${label} sessions.`,
+            flags: 64,
+        });
     }
 
     await interaction.deferReply({ flags: 64 });
-
-    const sessionType = typeOverride ?? interaction.options?.getString?.('session_type') ?? 'official';
     const now = Date.now();
     const sessionId = storage.openSession(interaction.guild.id, interaction.user.id, now, sessionType);
 
