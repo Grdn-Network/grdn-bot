@@ -20,7 +20,7 @@ const { deleteAllCrewVCs }                       = require('../../utils/crewVCMa
 const { sendLog }                                = require('../../logging/logHelper');
 const loggingConfig                              = require('../../config/logging.json');
 const {
-    ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE, DVMP_COMMAND_ROLE,
+    ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE, DVMP_COMMAND_ROLE, MEMBER_ROLE,
     DISPATCH_CHANNEL_ID, TRAIN_BOARD_CHANNEL_ID, CREW_VC_CATEGORY_ID, OPS_CATEGORY_ID,
 } = require('../../config');
 const { requireCategory } = require('../../utils/commandChannel');
@@ -79,7 +79,9 @@ module.exports = {
 // Who can open a given session type. Unofficial is open to any member; official
 // and stress test stay restricted to admins, hosts, and dispatch-qualified staff.
 function canStartSession(member, sessionType) {
-    if (sessionType === 'unofficial') return true;
+    if (sessionType === 'unofficial') {
+        return hasAnyRole(member, [MEMBER_ROLE, ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE]);
+    }
     return hasAnyRole(member, [ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE]);
 }
 

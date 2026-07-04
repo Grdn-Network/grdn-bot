@@ -73,9 +73,10 @@ module.exports = {
     SCAM_BURST_WINDOW_MS: 60 * 1000,
     SCAM_BURST_THRESHOLD: 2,
 
-    // Optional: auto-strip a "member" role whenever a user also has NEWCOMER
-    // (deferred: old invite links wrongly grant member). Set the ID + true to enable.
-    MEMBER_ROLE: null,
+    // "Member" role. Used for permission gates (start unofficial ops, edit the
+    // Shared Preset). Note: some old invite links wrongly grant this alongside
+    // NEWCOMER; MEMBER_AUTOSTRIP can strip it from newcomers (still off for now).
+    MEMBER_ROLE: '1474628279213228204',
     MEMBER_AUTOSTRIP: false,
 
 };
