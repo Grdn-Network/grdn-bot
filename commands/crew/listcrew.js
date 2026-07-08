@@ -15,8 +15,7 @@ module.exports = {
             return interaction.editReply('❌ No crew members are registered yet.');
         }
 
-        const trainmasters = [];
-        const dispatchers  = [];
+        const controllers  = [];
         const yardCrew     = [];
         const roadCrew     = [];
         const unassigned   = [];
@@ -41,8 +40,7 @@ module.exports = {
 
             const entry = `• \`${row.trainNumber}\` — <@${row.userId}>`;
 
-            if (row.type === 'TrainMaster') trainmasters.push(entry);
-            else if (row.type === 'Dispatcher') dispatchers.push(entry);
+            if (row.type === 'Controller') controllers.push(entry);
             else if (row.type === 'Yard Crew')  yardCrew.push(entry);
             else if (row.type === 'Road Crew')  roadCrew.push(entry);
             else unassigned.push(`• <@${row.userId}>`);
@@ -71,8 +69,7 @@ module.exports = {
             if (current) embed.addFields({ name: first ? label : `${label} (cont.)`, value: current, inline: false });
         }
 
-        addFields('🎖️ TrainMaster', trainmasters);
-        addFields('📡 Dispatcher',  dispatchers);
+        addFields('📡 Controller',  controllers);
         addFields('🚧 Yard Crew',   yardCrew);
         addFields('🚂 Road Crew',   roadCrew);
         addFields('⚪ Unassigned',  unassigned);

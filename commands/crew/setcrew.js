@@ -4,7 +4,7 @@ const storage = require('../../database/storage');
 const { updateTrainBoard } = require('../../utils/trainBoard');
 const { buildNickname } = require('../../utils/nickname');
 const { hasAnyRole } = require('../../utils/permissions');
-const { TRAIN_BOARD_CHANNEL_ID, STAFF_ROLES, TRAINMASTER_ROLE } = require('../../config');
+const { TRAIN_BOARD_CHANNEL_ID, STAFF_ROLES } = require('../../config');
 
 /**
  * Called when /setcrew runs during an active ops session.
@@ -33,10 +33,9 @@ module.exports = {
             option.setName('type')
                 .setDescription('Crew type')
                 .addChoices(
-                    { name: 'TrainMaster', value: 'TrainMaster' },
-                    { name: 'Dispatcher',  value: 'Dispatcher'  },
-                    { name: 'Yard Crew',   value: 'Yard Crew'   },
-                    { name: 'Road Crew',   value: 'Road Crew'   }
+                    { name: 'Controller', value: 'Controller' },
+                    { name: 'Yard Crew',  value: 'Yard Crew'  },
+                    { name: 'Road Crew',  value: 'Road Crew'  }
                 )
         )
         .addStringOption(option =>
@@ -85,15 +84,7 @@ module.exports = {
         const preferredName = interaction.options.getString('preferred_name');
 
         // Roles that don't operate trains — loco_type makes no sense for them
-        const NON_TRAIN_TYPES = ['Dispatcher', 'TrainMaster'];
-
-        // TrainMaster type requires that role (or staff setting it for someone else)
-        if (type === 'TrainMaster' && !targetUser && !hasAnyRole(member, [TRAINMASTER_ROLE, ...STAFF_ROLES])) {
-            return interaction.reply({
-                content: '❌ You do not have the TrainMaster role.',
-                flags: 64
-            });
-        }
+        const NON_TRAIN_TYPES = ['Controller'];
 
         // Reject loco_type for non-train roles
         if (locoType && type && NON_TRAIN_TYPES.includes(type)) {

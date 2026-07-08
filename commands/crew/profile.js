@@ -40,7 +40,7 @@ module.exports = {
         const opsAttended = storage.getOpsAttended(target.id);
         const lifetime    = storage.getUserLifetimeStats(target.id);
 
-        const operational = h.road_crew + h.dispatch + h.shunting + h.trainmaster;
+        const operational = h.road_crew + h.dispatch + h.shunting;
         const grandTotal  = operational + h.bonus;
 
         // ─── hours table ───────────────────────────────────────────────────────
@@ -51,9 +51,8 @@ module.exports = {
 
         const hoursLines = [
             row('Road Crew',   h.road_crew),
-            row('Dispatch',    h.dispatch),
+            row('Controller',  h.dispatch),
             row('Yard Crew',   h.shunting),
-            row('TrainMaster', h.trainmaster),
             '─'.repeat(28),
             `${'Total'.padEnd(L)}${fmt(grandTotal).padStart(T)}`,
         ];

@@ -430,18 +430,16 @@ function setDvSettings(host, port) {
 
 /**
  * Determines what category of hours a crew member earns.
- * Dispatchers → 'dispatch'
- * Road Crew   → 'road_crew'
- * Shunter with all-digit train number → 'shunting'
- * Shunter with a name/non-numeric     → 'yardmaster' (tracked but shown separately)
+ * Controller → 'dispatch'   (internal key kept for hours-data continuity)
+ * Road Crew  → 'road_crew'
+ * Yard Crew  → 'shunting'    (internal key kept for hours-data continuity)
  * Returns null if the user shouldn't be enrolled (no type, no train number).
  */
 function classifyCategory(type, trainNumber) {
     if (!type || !trainNumber || trainNumber.trim() === '') return null;
-    if (type === 'TrainMaster') return 'trainmaster';
-    if (type === 'Dispatcher')  return 'dispatch';
-    if (type === 'Road Crew')   return 'road_crew';
-    if (type === 'Yard Crew') return 'shunting';
+    if (type === 'Controller') return 'dispatch';
+    if (type === 'Road Crew')  return 'road_crew';
+    if (type === 'Yard Crew')  return 'shunting';
     return null;
 }
 
