@@ -29,6 +29,8 @@ try {
     alertTrain = alertChannel = null;
 }
 
+const sessionAuth = require('./utils/sessionAuth');
+
 module.exports = function startServer(client) {
     const app    = express();
     const PORT   = process.env.HTTP_PORT   || 3000;
@@ -92,7 +94,13 @@ module.exports = function startServer(client) {
 
     // ── Auth middleware ───────────────────────────────────────────────────────
     app.use((req, res, next) => {
-        if (SECRET && req.headers['x-secret'] !== SECRET) {
+        const provided = req.headers['x-secret'];
+        // Preferred: a live per-session token (minted at /session start). During
+        // migration also accept the global HTTP_SECRET so already-deployed mods
+        // keep working. TODO(1.0): drop the HTTP_SECRET branch once every client
+        // uses session tokens.
+        const authorised = sessionAuth.isValid(provided) || (SECRET && provided === SECRET);
+        if (!authorised) {
             console.warn(`[HTTP] Rejected unauthorised request from ${req.ip}`);
             return res.status(401).json({ error: 'Unauthorized' });
         }

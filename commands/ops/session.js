@@ -17,6 +17,7 @@ const { hasAnyRole }                             = require('../../utils/permissi
 const { updateTrainBoard }                       = require('../../utils/trainBoard');
 const { buildDispatchEmbed, buildDispatchComponents, deriveDvConnectUrl } = require('../../utils/dispatchEmbed');
 const { deleteAllCrewVCs }                       = require('../../utils/crewVCManager');
+const sessionAuth                                = require('../../utils/sessionAuth');
 const { sendLog }                                = require('../../logging/logHelper');
 const loggingConfig                              = require('../../config/logging.json');
 const {
@@ -219,7 +220,9 @@ async function handleStart(interaction, typeOverride = null) {
     // Uses the tunnel URL if resolved above, direct IP if not.
     // Fire-and-forget — don't let game-unreachable block the Discord response.
     const botPublicUrl  = process.env.BOT_PUBLIC_URL || '';
-    const botSecret     = process.env.HTTP_SECRET    || '';
+    // Mint a fresh per-session token instead of reusing the global secret.
+    // The host relays it to clients via /client-config, so nothing is baked in.
+    const botSecret     = sessionAuth.mintToken();
     const crewChannels  = interaction.guild.channels.cache
         .filter(ch => ch.parentId === CREW_VC_CATEGORY_ID && ch.type === ChannelType.GuildVoice)
         .sort((a, b) => a.rawPosition - b.rawPosition)
@@ -314,6 +317,7 @@ async function handleEnd(interaction) {
 
     // Close session — writes final minutes to ops_log, clears session_crew
     const sessionId = storage.closeSession(guild.id, interaction.user.id, now);
+    sessionAuth.clear(); // revoke this session's auth token
 
     let reset = 0, failed = 0;
 
