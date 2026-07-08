@@ -59,7 +59,7 @@ async function showHours(interaction) {
         if (member === undefined) continue;
 
         const h = storage.getUserHours(row.userId);
-        const total = h.road_crew + h.dispatch + h.shunting + h.trainmaster + h.bonus;
+        const total = h.road_crew + h.dispatch + h.shunting + h.bonus;
         entries.push({ row, total, h });
     }
 

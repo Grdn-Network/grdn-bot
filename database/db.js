@@ -243,6 +243,10 @@ db.prepare(`
 
 // Rename Shunter → Yard Crew
 db.prepare(`UPDATE registrations SET type = 'Yard Crew' WHERE type = 'Shunter'`).run();
+// Rename Dispatcher → Controller
+db.prepare(`UPDATE registrations SET type = 'Controller' WHERE type = 'Dispatcher'`).run();
+// Retire the TrainMaster crew type → fold into Road Crew. The TrainMaster Discord role is untouched (see grdn-bot#14).
+db.prepare(`UPDATE registrations SET type = 'Road Crew' WHERE type = 'TrainMaster'`).run();
 
 // Add active flag — 1 = active, 0 = soft-deleted (kept for records)
 try { db.prepare(`ALTER TABLE registrations ADD COLUMN active INTEGER NOT NULL DEFAULT 1`).run(); } catch {}

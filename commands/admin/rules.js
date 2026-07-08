@@ -11,7 +11,7 @@ const RULES_TEXT = [
     "4. **Banter is fine - read the room.** People can joke and speak their mind, but if someone says chill or stop, drop it.",
     "5. **Keep arguments contained.** Don't derail the whole server. Take it to DMs or cool off.",
     "6. **No doxxing / threats / weird stuff.** No personal info, no threats, no gore, no NSFW.",
-    "7. **Ops nights: don't grief.** No intentional crashes, no messing with other crews' trains/consists, and follow dispatch/shunter calls.",
+    "7. **Ops nights: don't grief.** No intentional crashes, no messing with other crews' trains/consists, and follow controller/yard crew calls.",
     "8. **No spam/scams.** No random ads, no sketchy links.",
     "9. **Moderation:** We keep it chill, but we'll warn/kick/ban if needed. Mods have final call.",
     "10. **Have fun - don't ruin it for others.** That's the whole point.",

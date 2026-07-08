@@ -304,13 +304,13 @@ module.exports = function startServer(client) {
 
                     if (existing) {
                         // ── 1. Already registered — update train/loco only ────
-                        // If they were a Dispatcher but are now boarding a loco, flip them
+                        // If they were a Controller but are now boarding a loco, flip them
                         // to Road Crew automatically so hours track correctly.
                         db.prepare(`
                             UPDATE registrations
                             SET train_number = ?,
                                 loco_type    = CASE WHEN ? IS NOT NULL THEN ? ELSE loco_type END,
-                                type         = CASE WHEN type = 'Dispatcher' THEN 'Road Crew' ELSE type END
+                                type         = CASE WHEN type = 'Controller' THEN 'Road Crew' ELSE type END
                             WHERE user_id = ? AND active = 1
                         `).run(toTrainNumber, locoType ?? null, locoType ?? null, link.discordId);
 

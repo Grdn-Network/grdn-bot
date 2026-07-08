@@ -197,7 +197,7 @@ async function updateTrainBoard(client, guildId, channelId) {
 
   const crew     = storage.getAllCrew(guildId);
   const filtered = crew.filter(
-    c => c.type && c.trainNumber && c.type.toLowerCase() !== 'dispatcher'
+    c => c.type && c.trainNumber && c.type.toLowerCase() !== 'controller'
   );
 
   // Group by crew type
