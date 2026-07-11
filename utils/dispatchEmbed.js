@@ -29,24 +29,30 @@ function buildDispatchEmbed() {
     const mods = db.prepare(
         `SELECT name, url, version, note FROM mods WHERE official = 1 ORDER BY sort_order, id`
     ).all();
-    const modsValue = mods.length === 0
-        ? 'No mods configured. Use `/mod add` to add required mods.'
-        : mods.map(m => {
-            let line = m.url ? `[${m.name}](${m.url})` : m.name;
-            if (m.version) line += ` v${m.version}`;
-            if (m.note) line += ` (${m.note})`;
-            return line;
-          }).join('\n');
+    const modLines = mods.map(m => {
+        let line = m.url ? `[${m.name}](${m.url})` : m.name;
+        if (m.version) line += ` v${m.version}`;
+        if (m.note) line += ` (${m.note})`;
+        return line;
+    });
 
     const activePreset = db.prepare(`SELECT name FROM presets WHERE active = 1 LIMIT 1`).get();
     const modsFieldName = activePreset ? `📦 Required Mods (${activePreset.name})` : '📦 Required Mods';
+
+    // A Discord embed field value maxes out at 1024 chars, so a long mod list
+    // can't live in one field. Past ~10 mods it would overflow and Discord
+    // would reject the whole embed edit, so split the lines across as many
+    // fields as needed, keeping each under the limit.
+    const modFields = mods.length === 0
+        ? [{ name: modsFieldName, value: 'No mods configured. Use `/mod add` to add required mods.', inline: false }]
+        : chunkFields(modLines, modsFieldName);
 
     return new EmbedBuilder()
         .setTitle('🚂 GRDN Operations')
         .setColor(0x2b2d31)
         .addFields(
             { name: '📋 Setup',                value: s.setup_notes || 'Not configured.', inline: false },
-            { name: modsFieldName,             value: modsValue,                          inline: false },
+            ...modFields,
             { name: '📡 Remote Dispatch Setup', value: s.rd_setup    || 'Not configured.', inline: false },
             { name: 'Server Name',             value: opsActive ? (s.server_name     || 'Not set') : '—', inline: true  },
             { name: 'Server Password',         value: opsActive ? (s.server_password || 'Not set') : '—', inline: true  },
@@ -54,6 +60,34 @@ function buildDispatchEmbed() {
             { name: 'Remote Dispatch Password', value: s.remote_password || 'GRDN',    inline: true  }
         )
         .setTimestamp();
+}
+
+// Packs the given lines into a sequence of embed-field objects, each with a
+// value under Discord's 1024-char limit. The first field keeps baseName; any
+// overflow fields are labelled "(cont.)". A single line longer than the limit
+// is hard-truncated so one bad entry can't break the whole embed.
+const FIELD_VALUE_LIMIT = 1024;
+function chunkFields(lines, baseName) {
+    const fields = [];
+    let current = '';
+    for (const raw of lines) {
+        const line = raw.length > FIELD_VALUE_LIMIT ? raw.slice(0, FIELD_VALUE_LIMIT) : raw;
+        if (current === '') {
+            current = line;
+        } else if (current.length + 1 + line.length <= FIELD_VALUE_LIMIT) {
+            current += `\n${line}`;
+        } else {
+            fields.push(current);
+            current = line;
+        }
+    }
+    if (current !== '') fields.push(current);
+
+    return fields.map((value, i) => ({
+        name: i === 0 ? baseName : `${baseName} (cont.)`,
+        value,
+        inline: false,
+    }));
 }
 
 /**
