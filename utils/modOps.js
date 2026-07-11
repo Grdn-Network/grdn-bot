@@ -59,10 +59,27 @@ function buildModListReply(action, name) {
         return line;
     };
 
-    let out = `✅ ${action}${name ? ` **${name}**` : ''}\n\n`;
-    out += allMods.length
-        ? `**📦 Mods (${allMods.length}):**\n${allMods.map(fmt).join('\n')}`
-        : `_No mods in the list._`;
+    const header = `✅ ${action}${name ? ` **${name}**` : ''}\n\n`;
+    if (allMods.length === 0) return header + `_No mods in the list._`;
+
+    // Discord caps message content at 2000 chars, and the confirm button appends
+    // a "Preset ... was also updated" line after this. Stay well under the cap and
+    // truncate the list with a summary if it would overflow. Without this, a long
+    // mod list made editReply throw AFTER the change had already been saved, which
+    // surfaced as a false "An error occurred". The full list lives in the embed.
+    const LIMIT = 1800;
+    let out = header + `**📦 Mods (${allMods.length}):**\n`;
+    const lines = allMods.map(fmt);
+    let shown = 0;
+    for (const line of lines) {
+        const piece = shown === 0 ? line : `\n${line}`;
+        if (out.length + piece.length > LIMIT) break;
+        out += piece;
+        shown++;
+    }
+    if (shown < lines.length) {
+        out += `\n_+${lines.length - shown} more not shown (full list is in the Operations embed)._`;
+    }
     return out;
 }
 
