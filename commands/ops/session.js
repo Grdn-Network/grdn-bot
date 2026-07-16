@@ -344,9 +344,12 @@ async function handleEnd(interaction) {
     storage.clearAllAssignments(guild.id);
     await deleteAllCrewVCs(guild.client, guild.id);
 
-    // Mark op inactive + refresh dispatch embed
+    // Mark op inactive + refresh dispatch embed.
+    // The Remote Dispatch password is not hidden when ops are inactive (unlike the
+    // server name/password), so reset it to the default instead of leaving the last
+    // session's password on public display.
     try {
-        db.prepare(`UPDATE dispatch_settings SET ops_active = 0 WHERE id = 1`).run();
+        db.prepare(`UPDATE dispatch_settings SET ops_active = 0, remote_password = 'GRDN' WHERE id = 1`).run();
         const embedRow = db.prepare(`SELECT message_id FROM dispatch_embed WHERE id = 1`).get();
         if (embedRow) {
             const ch = guild.channels.cache.get(DISPATCH_CHANNEL_ID);
