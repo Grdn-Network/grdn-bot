@@ -3,7 +3,12 @@ const { SlashCommandBuilder } = require('discord.js');
 const db = require('../../database/db');
 const { buildDispatchEmbed, deriveDvConnectUrl } = require('../../utils/dispatchEmbed');
 const { hasAnyRole } = require('../../utils/permissions');
-const { ADMIN_ROLE, DISPATCH_CHANNEL_ID } = require('../../config');
+const { ADMIN_ROLE, HOST_ROLE, DVMP_COMMAND_ROLE, DISPATCH_CHANNEL_ID } = require('../../config');
+
+// Fields only admins may edit. Setup is admin-owned config; the rest
+// (server name/password, RD link/password) is operational and hosts need it
+// every session.
+const ADMIN_ONLY_FIELDS = ['setup_notes'];
 
 // Whitelist — maps choice value → DB column name and display label.
 // Column names are hardcoded here, never interpolated from user input.
@@ -41,8 +46,8 @@ module.exports = {
         ),
 
     async execute(interaction) {
-        if (!hasAnyRole(interaction.member, [ADMIN_ROLE])) {
-            return interaction.reply({ content: '❌ Only admins can edit the embed.', flags: 64 });
+        if (!hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE, DVMP_COMMAND_ROLE])) {
+            return interaction.reply({ content: '❌ Only admins and hosts can edit the embed.', flags: 64 });
         }
 
         const fieldKey = interaction.options.getString('field');
@@ -50,6 +55,13 @@ module.exports = {
 
         const fieldDef = FIELD_MAP[fieldKey];
         if (!fieldDef) return interaction.reply({ content: '❌ Invalid field.', flags: 64 });
+
+        if (ADMIN_ONLY_FIELDS.includes(fieldKey) && !hasAnyRole(interaction.member, [ADMIN_ROLE])) {
+            return interaction.reply({
+                content: `❌ Only admins can edit **${fieldDef.label}**. The other embed fields are open to hosts.`,
+                flags: 64
+            });
+        }
 
         // Ensure settings row exists before writing
         db.prepare(`
