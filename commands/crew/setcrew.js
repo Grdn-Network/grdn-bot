@@ -18,7 +18,11 @@ function enrollIfSessionActive(userId, guildId, type, trainNumber, isInVC) {
     const category = storage.classifyCategory(type, trainNumber);
     if (!category) return; // no valid type or train number — don't enroll
     storage.addToSessionCrew(session.id, userId); // opt in regardless of VC status
-    if (isInVC) storage.openOpsEntry(userId, guildId, session.id, category, Date.now());
+    // Only official ops and stress tests accrue hours. Unofficial crew are still
+    // tracked as participants so end-op nickname cleanup still covers them.
+    if (isInVC && storage.sessionTracksHours(session)) {
+        storage.openOpsEntry(userId, guildId, session.id, category, Date.now());
+    }
 }
 
 module.exports = {

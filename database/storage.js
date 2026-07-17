@@ -452,6 +452,23 @@ function getActiveSession(guildId) {
     `).get(guildId) || null;
 }
 
+// Session types that accrue hours. Unofficial ops are casual and deliberately
+// do not touch the hours system; only official ops and stress tests count.
+const HOURS_TRACKED_SESSION_TYPES = ['official', 'stress_test'];
+
+/** True when this session's type accrues hours. */
+function sessionTracksHours(session) {
+    return !!session && HOURS_TRACKED_SESSION_TYPES.includes(session.session_type);
+}
+
+/** Sessions left open longer than this are stale and get auto-closed. */
+function getStaleSessions(maxAgeMs, now = Date.now()) {
+    return db.prepare(`
+        SELECT * FROM ops_sessions
+        WHERE ended_at IS NULL AND started_at < ?
+    `).all(now - maxAgeMs);
+}
+
 /**
  * Opens a new session. Closes any orphaned open session first. Returns the new session id.
  * @param {'official'|'unofficial'} sessionType
@@ -860,6 +877,8 @@ module.exports = {
     setDvSettings,
     classifyCategory,
     getActiveSession,
+    sessionTracksHours,
+    getStaleSessions,
     openSession,
     openOpsEntry,
     closeOpsEntry,
