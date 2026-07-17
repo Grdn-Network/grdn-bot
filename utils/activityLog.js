@@ -9,9 +9,26 @@
 // Read side: /activity (admin only). See grdn-bot issue #13.
 
 const db = require('../database/db');
+const loggingConfig = require('../config/logging.json');
 
 const DETAIL_MAX = 500;
 const ERROR_MAX  = 500;
+
+// Live feed settings. Lines are batched into one message every FLUSH_MS so a
+// busy op cannot outrun Discord's per-channel rate limit (roughly 5 messages
+// per 5 seconds). Nothing is dropped, it just arrives grouped.
+const FLUSH_MS    = 3000;
+const MESSAGE_MAX = 1900;
+
+let queue        = [];
+let flushTimer   = null;
+let mirrorClient = null;
+
+// Feed target. Set activityChannel in config/logging.json to split the feed out
+// of the main log channel; otherwise it rides along with the other logs.
+function feedChannelId() {
+    return loggingConfig.activityChannel || loggingConfig.logChannel || null;
+}
 
 /**
  * Writes one activity row. Never throws.
@@ -41,6 +58,68 @@ function record(entry) {
     } catch (err) {
         console.error('[activityLog] record failed:', err.message);
     }
+}
+
+/** One compact feed line for an entry. */
+function formatLine(entry) {
+    const when = `<t:${Math.floor(Date.now() / 1000)}:T>`;
+    const what = entry.kind === 'command' ? `\`/${entry.name}\`` : `\`${entry.name}\``;
+    let line = `${when} <@${entry.userId}> ${what}`;
+    if (entry.detail)     line += ` \`${String(entry.detail).slice(0, 200)}\``;
+    if (entry.channelId)  line += ` in <#${entry.channelId}>`;
+    if (entry.status !== 'ok') line += ` ⚠️ ${String(entry.error ?? entry.status).slice(0, 120)}`;
+    return line;
+}
+
+/** Queues an entry for the live feed. Never throws. */
+function mirror(client, entry) {
+    try {
+        if (!feedChannelId()) return;
+        mirrorClient = client;
+        queue.push(formatLine(entry));
+        if (!flushTimer) flushTimer = setTimeout(flush, FLUSH_MS);
+    } catch (err) {
+        console.error('[activityLog] mirror failed:', err.message);
+    }
+}
+
+/** Packs queued lines into messages under the 2000-char cap and sends them. */
+function flush() {
+    flushTimer = null;
+    try {
+        const id      = feedChannelId();
+        const channel = mirrorClient?.channels?.cache?.get(id);
+        if (!channel || queue.length === 0) { queue = []; return; }
+
+        const batches = [];
+        let current = '';
+        for (const line of queue) {
+            const piece = current === '' ? line : `\n${line}`;
+            if (current.length + piece.length > MESSAGE_MAX) {
+                batches.push(current);
+                current = line;
+            } else {
+                current += piece;
+            }
+        }
+        if (current) batches.push(current);
+        queue = [];
+
+        for (const content of batches) {
+            // parse: [] renders the mentions as names without pinging anyone.
+            channel.send({ content, allowedMentions: { parse: [] } })
+                .catch(err => console.error('[activityLog] feed send failed:', err.message));
+        }
+    } catch (err) {
+        queue = [];
+        console.error('[activityLog] flush failed:', err.message);
+    }
+}
+
+/** Records to the database and queues the line for the live feed. Never throws. */
+function capture(client, entry) {
+    record(entry);
+    mirror(client, entry);
 }
 
 /**
@@ -105,4 +184,4 @@ function query({ userId, name, limit = 15 } = {}) {
     }
 }
 
-module.exports = { record, describeOptions, describeModalFields, query };
+module.exports = { capture, record, describeOptions, describeModalFields, query };

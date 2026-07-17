@@ -20,9 +20,11 @@ module.exports = (client) => {
     async function runLogged(interaction, { kind, name, detail }, fn, onError) {
         try {
             await fn();
-            activityLog.record({ ...actor(interaction), kind, name, detail, status: 'ok' });
+            activityLog.capture(interaction.client, {
+                ...actor(interaction), kind, name, detail, status: 'ok',
+            });
         } catch (err) {
-            activityLog.record({
+            activityLog.capture(interaction.client, {
                 ...actor(interaction), kind, name, detail,
                 status: 'error',
                 error: err?.message ?? String(err),
