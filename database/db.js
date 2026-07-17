@@ -362,4 +362,29 @@ db.prepare(`
     )
 `).run();
 
+/* -----------------------------------------------------
+   ACTIVITY LOG — one row per command, button, and modal use.
+   Records who did what, with the arguments they passed, so an
+   action can always be traced back to a person. Written by
+   interactionHandler, read by /activity (admin only).
+----------------------------------------------------- */
+db.prepare(`
+    CREATE TABLE IF NOT EXISTS activity_log (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts         INTEGER NOT NULL,
+        guild_id   TEXT,
+        user_id    TEXT    NOT NULL,
+        user_tag   TEXT,
+        kind       TEXT    NOT NULL,
+        name       TEXT    NOT NULL,
+        detail     TEXT,
+        channel_id TEXT,
+        status     TEXT    NOT NULL,
+        error      TEXT
+    )
+`).run();
+db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_ts   ON activity_log (ts DESC)`).run();
+db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_user ON activity_log (user_id, ts DESC)`).run();
+db.prepare(`CREATE INDEX IF NOT EXISTS idx_activity_name ON activity_log (name, ts DESC)`).run();
+
 module.exports = db;
