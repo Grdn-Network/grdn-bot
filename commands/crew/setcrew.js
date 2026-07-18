@@ -51,18 +51,32 @@ module.exports = {
         const targetUser = interaction.options.getUser('user');
         const member = interaction.member;
 
-        let userIdToEdit;
-        if (targetUser) {
-            if (!hasAnyRole(member, STAFF_ROLES)) {
-                return interaction.reply({
-                    content: "❌ You do not have permission to edit another user's profile.",
-                    flags: 64
-                });
-            }
-            userIdToEdit = targetUser.id;
-        } else {
-            userIdToEdit = interaction.user.id;
+        const pickedSelf   = !!targetUser && targetUser.id === interaction.user.id;
+        const editingOther = !!targetUser && !pickedSelf;
+
+        // Editing someone else's profile is a staff-only action. Picking yourself
+        // is allowed for anyone (it just edits your own profile), so only block the
+        // real staff action and say plainly why.
+        if (editingOther && !hasAnyRole(member, STAFF_ROLES)) {
+            return interaction.reply({
+                content:
+                    "❌ Choosing a **user** edits *that person's* profile, which is a staff-only action. " +
+                    "To set up your own, run `/setcrew` without the `user` option.",
+                flags: 64
+            });
         }
+
+        const userIdToEdit = editingOther ? targetUser.id : interaction.user.id;
+
+        // If they picked themselves in the user option, it works, but let them know
+        // afterward that it was not necessary. Sent as a separate hidden note.
+        const sendSelfPickNote = async () => {
+            if (!pickedSelf) return;
+            await interaction.followUp({
+                content: 'ℹ️ You did not need to choose yourself in the `user` option. Running `/setcrew` on its own edits your own profile.',
+                flags: 64,
+            }).catch(() => {});
+        };
 
         const type = interaction.options.getString('type');
         const trainNumber = interaction.options.getString('train_number');
@@ -145,7 +159,9 @@ module.exports = {
                 preferredName,
             });
 
-            return interaction.editReply({ content: `✅ Profile created for <@${userIdToEdit}>.${ownerNote}` });
+            await interaction.editReply({ content: `✅ Profile created for <@${userIdToEdit}>.${ownerNote}` });
+            await sendSelfPickNote();
+            return;
         }
 
         const newType      = type        || existing.type;
@@ -217,6 +233,8 @@ module.exports = {
             preferredName: newPreferred,
         });
 
-        return interaction.editReply({ content: `✅ Profile updated and nickname synced for <@${userIdToEdit}>.${ownerNote}` });
+        await interaction.editReply({ content: `✅ Profile updated and nickname synced for <@${userIdToEdit}>.${ownerNote}` });
+        await sendSelfPickNote();
+        return;
     }
 };
