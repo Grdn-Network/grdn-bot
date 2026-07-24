@@ -7,6 +7,7 @@ const fetch = require('node-fetch');
 const storage = require('./database/storage');
 const { updateTrainBoard } = require('./utils/trainBoard');
 const { runRetention } = require('./utils/purgeForensics');
+const { sweepStaleSessions, SWEEP_INTERVAL_MS } = require('./utils/staleSessions');
 
 const CRASH_LOG_PATH = 'C:\\GRDN\\bot\\crash.log';
 fs.mkdirSync(path.dirname(CRASH_LOG_PATH), { recursive: true });
@@ -76,6 +77,11 @@ client.once('ready', () => {
     // Prune old purge forensics: saved media after 7 days, records after 90.
     runRetention();
     setInterval(runRetention, 24 * 60 * 60 * 1000);
+
+    // Close any op that was started and never ended, so a forgotten End Op
+    // cannot keep someone's hours clock running while they sit in a VC.
+    sweepStaleSessions(client);
+    setInterval(() => sweepStaleSessions(client), SWEEP_INTERVAL_MS);
 
     // Continuously refresh the train board while an op session is active.
     setInterval(async () => {

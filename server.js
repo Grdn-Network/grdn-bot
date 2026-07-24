@@ -473,7 +473,8 @@ module.exports = function startServer(client) {
                         const category = storage.classifyCategory(updatedRow.type, updatedRow.train_number);
                         if (category) {
                             storage.addToSessionCrew(activeSession.id, updatedRow.user_id);
-                            if (member.voice?.channel) {
+                            // Only official ops and stress tests accrue hours.
+                            if (member.voice?.channel && storage.sessionTracksHours(activeSession)) {
                                 storage.openOpsEntry(updatedRow.user_id, guild.id, activeSession.id, category, Date.now());
                             }
                         }

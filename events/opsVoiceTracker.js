@@ -30,6 +30,9 @@ module.exports = (client) => {
                 const session = storage.getActiveSession(guildId);
                 if (!session) return;
 
+                // Only official ops and stress tests accrue hours.
+                if (!storage.sessionTracksHours(session)) return;
+
                 if (!storage.isInSessionCrew(session.id, userId)) return;
 
                 const crew = storage.getCrewByUserId(guildId, userId);
