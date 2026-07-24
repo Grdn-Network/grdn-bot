@@ -1,8 +1,37 @@
 // interactionHandler.js
 const fs = require('fs');
 const path = require('path');
+const activityLog = require('./utils/activityLog');
 
 module.exports = (client) => {
+
+    // Base identity fields for an activity row.
+    function actor(interaction) {
+        return {
+            guildId:   interaction.guild?.id ?? null,
+            userId:    interaction.user.id,
+            userTag:   interaction.user.tag,
+            channelId: interaction.channelId ?? null,
+        };
+    }
+
+    // Runs a handler and records the attempt either way. Recording never throws,
+    // so it cannot interfere with the interaction itself.
+    async function runLogged(interaction, { kind, name, detail }, fn, onError) {
+        try {
+            await fn();
+            activityLog.capture(interaction.client, {
+                ...actor(interaction), kind, name, detail, status: 'ok',
+            });
+        } catch (err) {
+            activityLog.capture(interaction.client, {
+                ...actor(interaction), kind, name, detail,
+                status: 'error',
+                error: err?.message ?? String(err),
+            });
+            await onError(err);
+        }
+    }
 
     // Load button handlers from buttons/ directory
     const buttonHandlers = [];
@@ -56,21 +85,31 @@ module.exports = (client) => {
             if (interaction.isButton()) {
                 const handler = findHandler(buttonHandlers, interaction.customId, true);
                 if (!handler) return;
-                try {
-                    await handler.execute(interaction);
-                } catch (err) {
-                    console.error('[Button DM Error]', interaction.customId, err);
-                    await safeReply(interaction, { content: '❌ An error occurred.', flags: 64 });
-                }
+                await runLogged(
+                    interaction,
+                    { kind: 'button', name: interaction.customId },
+                    () => handler.execute(interaction),
+                    async (err) => {
+                        console.error('[Button DM Error]', interaction.customId, err);
+                        await safeReply(interaction, { content: '❌ An error occurred.', flags: 64 });
+                    },
+                );
             } else if (interaction.isModalSubmit()) {
                 const handler = findHandler(modalHandlers, interaction.customId, true);
                 if (!handler) return;
-                try {
-                    await handler.execute(interaction);
-                } catch (err) {
-                    console.error('[Modal DM Error]', interaction.customId, err);
-                    await safeReply(interaction, { content: '❌ An error occurred.', flags: 64 });
-                }
+                await runLogged(
+                    interaction,
+                    {
+                        kind: 'modal',
+                        name: interaction.customId,
+                        detail: activityLog.describeModalFields(interaction),
+                    },
+                    () => handler.execute(interaction),
+                    async (err) => {
+                        console.error('[Modal DM Error]', interaction.customId, err);
+                        await safeReply(interaction, { content: '❌ An error occurred.', flags: 64 });
+                    },
+                );
             }
             return;
         }
@@ -98,15 +137,22 @@ module.exports = (client) => {
             const command = client.commands.get(interaction.commandName);
             if (!command) return;
 
-            try {
-                await command.execute(interaction);
-            } catch (err) {
-                console.error('[Command Error]', interaction.commandName, err);
-                await safeReply(interaction, {
-                    content: '❌ An error occurred while executing this command.',
-                    flags: 64
-                });
-            }
+            await runLogged(
+                interaction,
+                {
+                    kind: 'command',
+                    name: interaction.commandName,
+                    detail: activityLog.describeOptions(interaction),
+                },
+                () => command.execute(interaction),
+                async (err) => {
+                    console.error('[Command Error]', interaction.commandName, err);
+                    await safeReply(interaction, {
+                        content: '❌ An error occurred while executing this command.',
+                        flags: 64
+                    });
+                },
+            );
             return;
         }
 
@@ -116,12 +162,19 @@ module.exports = (client) => {
         if (interaction.isModalSubmit()) {
             const handler = findHandler(modalHandlers, interaction.customId);
             if (!handler) return;
-            try {
-                await handler.execute(interaction);
-            } catch (err) {
-                console.error('[Modal Error]', interaction.customId, err);
-                await safeReply(interaction, { content: '❌ An error occurred.', flags: 64 });
-            }
+            await runLogged(
+                interaction,
+                {
+                    kind: 'modal',
+                    name: interaction.customId,
+                    detail: activityLog.describeModalFields(interaction),
+                },
+                () => handler.execute(interaction),
+                async (err) => {
+                    console.error('[Modal Error]', interaction.customId, err);
+                    await safeReply(interaction, { content: '❌ An error occurred.', flags: 64 });
+                },
+            );
             return;
         }
 
@@ -133,11 +186,14 @@ module.exports = (client) => {
         const handler = findHandler(buttonHandlers, interaction.customId);
         if (!handler) return;
 
-        try {
-            await handler.execute(interaction);
-        } catch (err) {
-            console.error('[Button Error]', interaction.customId, err);
-            await safeReply(interaction, { content: '❌ An error occurred.', flags: 64 });
-        }
+        await runLogged(
+            interaction,
+            { kind: 'button', name: interaction.customId },
+            () => handler.execute(interaction),
+            async (err) => {
+                console.error('[Button Error]', interaction.customId, err);
+                await safeReply(interaction, { content: '❌ An error occurred.', flags: 64 });
+            },
+        );
     });
 };
