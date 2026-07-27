@@ -25,27 +25,13 @@ function buildDispatchEmbed() {
 
     const opsActive = !!s.ops_active;
 
-    // Build mods section — only official mods appear in the public embed
+    // Only official mods appear in the public embed.
     const mods = db.prepare(
         `SELECT name, url, version, note FROM mods WHERE official = 1 ORDER BY sort_order, id`
     ).all();
-    const modLines = mods.map(m => {
-        let line = m.url ? `[${m.name}](${m.url})` : m.name;
-        if (m.version) line += ` v${m.version}`;
-        if (m.note) line += ` (${m.note})`;
-        return line;
-    });
-
     const activePreset = db.prepare(`SELECT name FROM presets WHERE active = 1 LIMIT 1`).get();
     const modsFieldName = activePreset ? `📦 Required Mods (${activePreset.name})` : '📦 Required Mods';
-
-    // A Discord embed field value maxes out at 1024 chars, so a long mod list
-    // can't live in one field. Past ~10 mods it would overflow and Discord
-    // would reject the whole embed edit, so split the lines across as many
-    // fields as needed, keeping each under the limit.
-    const modFields = mods.length === 0
-        ? [{ name: modsFieldName, value: 'No mods configured. Use `/mod add` to add required mods.', inline: false }]
-        : chunkFields(modLines, modsFieldName);
+    const modFields = buildModFields(mods, modsFieldName);
 
     return new EmbedBuilder()
         .setTitle('🚂 GRDN Operations')
@@ -60,6 +46,25 @@ function buildDispatchEmbed() {
             { name: 'Remote Dispatch Password', value: s.remote_password || 'GRDN',    inline: true  }
         )
         .setTimestamp();
+}
+
+// Formats one mod row the way the ops embed shows it: linked name, version,
+// note. Shared so /viewmods renders a preset identically to the live embed.
+function formatModLine(m) {
+    let line = m.url ? `[${m.name}](${m.url})` : m.name;
+    if (m.version) line += ` v${m.version}`;
+    if (m.note) line += ` (${m.note})`;
+    return line;
+}
+
+// Builds the Required Mods embed field(s) for a set of mod rows, splitting
+// across fields to stay under the 1024-char limit. Used by both the live ops
+// embed and /viewmods so they always match.
+function buildModFields(mods, baseName) {
+    if (!mods.length) {
+        return [{ name: baseName, value: 'No mods configured. Use `/mod add` to add required mods.', inline: false }];
+    }
+    return chunkFields(mods.map(formatModLine), baseName);
 }
 
 // Packs the given lines into a sequence of embed-field objects, each with a
@@ -127,4 +132,4 @@ function deriveDvConnectUrl(rdLink) {
     }
 }
 
-module.exports = { buildDispatchEmbed, buildDispatchComponents, deriveDvConnectUrl };
+module.exports = { buildDispatchEmbed, buildModFields, buildDispatchComponents, deriveDvConnectUrl };
