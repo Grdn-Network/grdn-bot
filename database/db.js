@@ -278,6 +278,20 @@ if (!bonusGranted) {
     db.prepare(`INSERT INTO ops_meta (key, value) VALUES ('bonus_granted', '1')`).run();
 }
 
+// One-time recalc: remove hours logged from unofficial ops. Unofficial sessions
+// were never meant to count toward the leaderboard, but before session-type
+// gating landed they accrued hours like any other. This clears exactly those
+// rows (matched by their session's type), and nothing else. Guarded so it runs
+// once. New unofficial ops no longer log hours at all.
+if (!db.prepare(`SELECT value FROM ops_meta WHERE key = 'unofficial_hours_purged'`).get()) {
+    const res = db.prepare(`
+        DELETE FROM ops_log
+        WHERE session_id IN (SELECT id FROM ops_sessions WHERE session_type = 'unofficial')
+    `).run();
+    db.prepare(`INSERT INTO ops_meta (key, value) VALUES ('unofficial_hours_purged', '1')`).run();
+    console.log(`[Recalc] Cleared ${res.changes} unofficial-op hours row(s) from ops_log.`);
+}
+
 /* -----------------------------------------------------
    SESSION CREW — explicit opt-in per official session
    Only users who run /setcrew while a session is active
