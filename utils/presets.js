@@ -33,6 +33,14 @@ const loadPresetIntoMods = db.transaction((presetId) => {
     for (const m of rows) ins.run(m.name, m.url, m.version, m.note, m.official, m.sort_order);
 });
 
+// Non-destructive read of a preset's stored mods. Unlike loadPresetIntoMods,
+// this does not touch the live `mods` table. Used by /viewmods to preview.
+function getPresetMods(presetId) {
+    return db.prepare(
+        `SELECT name, url, version, note, official, sort_order FROM preset_mods WHERE preset_id = ? ORDER BY sort_order, id`
+    ).all(presetId);
+}
+
 // Save current mods into the active preset. Called after every /mod edit.
 function syncActivePreset() {
     const active = getActivePreset();
@@ -59,6 +67,7 @@ module.exports = {
     listPresetNames,
     snapshotModsToPreset,
     loadPresetIntoMods,
+    getPresetMods,
     syncActivePreset,
     createPresetFromCurrentMods,
     setActivePreset,
