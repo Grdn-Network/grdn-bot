@@ -177,6 +177,16 @@ async function handleStart(interaction, typeOverride = null) {
         });
     }
 
+    // Block starting a new op while one is already running. Starting would
+    // orphan-close the live session and wipe the embed info, which has been
+    // abused. The current op must be ended first (End Operation).
+    if (storage.getActiveSession(interaction.guild.id)) {
+        return interaction.reply({
+            content: '❌ An operation is already running. End it first with **End Operation** before starting a new one.',
+            flags: 64,
+        });
+    }
+
     await interaction.deferReply({ flags: 64 });
     const now = Date.now();
     const sessionId = storage.openSession(interaction.guild.id, interaction.user.id, now, sessionType);
@@ -284,17 +294,28 @@ async function handleStart(interaction, typeOverride = null) {
 // ── end ───────────────────────────────────────────────────────────────────────
 
 async function handleEnd(interaction) {
-    if (!hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE])) {
-        return interaction.reply({ content: '❌ You do not have permission to use this command.', flags: 64 });
+    const guild = interaction.guild;
+    const now   = Date.now();
+
+    // Fetch the active session up front: it drives both the permission check
+    // (the person who started this op may end it) and the cleanup below.
+    const activeSession = storage.getActiveSession(guild.id);
+
+    // Who may end an op: staff and DVMP Command can end any op; the person who
+    // started the current op can end their own (so a member who opened an
+    // unofficial session can close it). Nobody else, to stop trolling.
+    const isStaff   = hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE, DVMP_COMMAND_ROLE]);
+    const isStarter = !!activeSession && activeSession.started_by === interaction.user.id;
+    if (!isStaff && !isStarter) {
+        return interaction.reply({
+            content: '❌ Only staff, DVMP Command, or the person who started this op can end it.',
+            flags: 64,
+        });
     }
 
     await interaction.reply({ content: '🔄 Closing ops session and resetting nicknames…', flags: 64 });
 
-    const guild = interaction.guild;
-    const now   = Date.now();
-
     // Capture participants BEFORE closing — closeSession wipes session_crew
-    const activeSession = storage.getActiveSession(guild.id);
     const participants  = activeSession ? storage.getSessionCrew(activeSession.id) : [];
 
     // Build the unified reset set: session_crew participants + anyone in the crew DB
