@@ -66,7 +66,7 @@ module.exports = {
         const hasStats = hasMiles || hasJobs;
 
         const milesStr = hasMiles
-            ? `${(lifetime.car_miles).toFixed(1)} mi`
+            ? `${(lifetime.car_miles).toFixed(1)} km`
             : '—';
         const jobsStr  = hasJobs
             ? `${lifetime.jobs_completed}`
@@ -94,7 +94,7 @@ module.exports = {
                 { name: '🚆 Train',         value: record.train_number || '—',  inline: true },
                 { name: '🔧 Loco',          value: record.loco_type   || '—',  inline: true },
                 { name: '📅 Ops Attended',  value: `${opsAttended}`,            inline: true },
-                { name: '🛤️ Miles Driven',  value: milesStr,                    inline: true },
+                { name: '🛤️ Km Driven',     value: milesStr,                    inline: true },
                 { name: '✅ Jobs Done',      value: jobsStr,                     inline: true },
                 ...(roleLabel ? [{ name: '🏅 Last Role', value: roleLabel, inline: true }] : []),
                 { name: '⏱️ Hours',         value: hoursBlock,                  inline: false },
