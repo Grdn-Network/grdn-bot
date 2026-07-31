@@ -1,6 +1,6 @@
 {
   "name": "grdn-bot",
-  "version": "1.0.0",
+  "version": "0.9.0",
   "description": "Discord reaction role bot",
   "main": "index.js",
   "scripts": {
