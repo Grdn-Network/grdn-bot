@@ -228,6 +228,13 @@ module.exports = function startServer(client) {
     // GRDNConnect sends a pre-formatted CSX MicroHBD-style message.
     // Bot joins the VC of opted-in crew and plays it via TTS.
     app.post('/defect-alert', async (req, res) => {
+        // SHELVED: defect detection was scrapped. The mod no longer sends these, and
+        // we ack-and-drop any stray/forged POST so the bot never joins a VC to "yap"
+        // a false alarm (grdnConnect defect monitor is disabled). Voice playback for
+        // /call is unaffected. Restore the body below to revive defect alerts.
+        return res.json({ ok: true, shelved: true });
+
+        // eslint-disable-next-line no-unreachable
         const { trainNumber, defectType, message, detail } = req.body ?? {};
         if (!trainNumber || !defectType || !message) {
             return res.status(400).json({ error: 'Missing trainNumber, defectType, or message' });
