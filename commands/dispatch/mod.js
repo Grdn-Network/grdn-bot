@@ -27,6 +27,7 @@ module.exports = {
                 { name: 'Add — add or fully update a mod',        value: 'add'    },
                 { name: 'Edit — update specific fields of a mod', value: 'edit'   },
                 { name: 'Remove — delete a mod from the list',    value: 'remove' },
+                { name: 'Category - move a mod between sections', value: 'category' },
             )
         )
         .addStringOption(o => o
@@ -49,6 +50,16 @@ module.exports = {
             .setName('note')
             .setDescription('Short note shown after the link. Use "clear" to remove.')
             .setRequired(false)
+        )
+        .addStringOption(o => o
+            .setName('category')
+            .setDescription('Which section the mod sits in (used with the Category action)')
+            .setRequired(false)
+            .addChoices(
+                { name: 'Required',          value: 'required' },
+                { name: 'Client / Optional', value: 'optional' },
+                { name: 'Host Only',         value: 'host'     },
+            )
         ),
 
     async autocomplete(interaction) {
@@ -97,18 +108,32 @@ module.exports = {
             }
             payload = { action, name: existing.name, modId: existing.id, url, version, note };
 
-        } else { // remove
+        } else if (action === 'remove') {
             const existing = db.prepare(`SELECT id, name FROM mods WHERE name = ? COLLATE NOCASE`).get(name);
             if (!existing) {
                 return interaction.reply({ content: `❌ No mod named **${name}** found. Use autocomplete or check the spelling.`, flags: 64 });
             }
             payload = { action, name: existing.name, modId: existing.id };
+
+        } else { // category
+            const existing = db.prepare(`SELECT id, name FROM mods WHERE name = ? COLLATE NOCASE`).get(name);
+            if (!existing) {
+                return interaction.reply({ content: `❌ No mod named **${name}** found. Use autocomplete or check the spelling.`, flags: 64 });
+            }
+            const category = interaction.options.getString('category');
+            if (!category) {
+                return interaction.reply({ content: '❌ Choose a `category` for this action (Required / Client / Optional / Host).', flags: 64 });
+            }
+            payload = { action, name: existing.name, modId: existing.id, category };
         }
 
         // Stash and ask for confirmation, naming the active preset that will change
         const active = getActivePreset();
         const presetLabel = active ? `**${active.name}**` : 'the current mods';
-        const verb = action === 'add' ? 'add/update' : action;
+        const CAT_LABEL = { required: 'Required', optional: 'Client / Optional', host: 'Host Only' };
+        const verb = action === 'add' ? 'add/update'
+            : action === 'category' ? `move to ${CAT_LABEL[payload.category]}`
+            : action;
 
         const id = modPending.put(interaction.user.id, payload);
         const row = new ActionRowBuilder().addComponents(
