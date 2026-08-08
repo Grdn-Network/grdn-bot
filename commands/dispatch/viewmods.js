@@ -10,7 +10,7 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const {
     getActivePreset, getPresetByName, listPresetNames, getPresetMods,
 } = require('../../utils/presets');
-const { buildModFields } = require('../../utils/dispatchEmbed');
+const { buildModSections } = require('../../utils/dispatchEmbed');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -44,7 +44,7 @@ module.exports = {
 
         const mods = getPresetMods(preset.id);
         const activeTag = preset.active ? ' · active' : '';
-        const fields = buildModFields(mods, `📦 Required Mods (${preset.name})`);
+        const fields = buildModSections(mods);
 
         const embed = new EmbedBuilder()
             .setTitle(`🚂 Preset: ${preset.name}${activeTag}`)

@@ -20,24 +20,24 @@ function listPresetNames() {
 // Overwrite a preset's stored mod set with the current live `mods` table.
 const snapshotModsToPreset = db.transaction((presetId) => {
     db.prepare(`DELETE FROM preset_mods WHERE preset_id = ?`).run(presetId);
-    const mods = db.prepare(`SELECT name, url, version, note, official, sort_order FROM mods ORDER BY sort_order, id`).all();
-    const ins = db.prepare(`INSERT INTO preset_mods (preset_id, name, url, version, note, official, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)`);
-    for (const m of mods) ins.run(presetId, m.name, m.url, m.version, m.note, m.official, m.sort_order);
+    const mods = db.prepare(`SELECT name, url, version, note, official, category, mod_id, sort_order FROM mods ORDER BY sort_order, id`).all();
+    const ins = db.prepare(`INSERT INTO preset_mods (preset_id, name, url, version, note, official, category, mod_id, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    for (const m of mods) ins.run(presetId, m.name, m.url, m.version, m.note, m.official, m.category, m.mod_id, m.sort_order);
 });
 
 // Replace the live `mods` table with a preset's stored mod set.
 const loadPresetIntoMods = db.transaction((presetId) => {
-    const rows = db.prepare(`SELECT name, url, version, note, official, sort_order FROM preset_mods WHERE preset_id = ? ORDER BY sort_order, id`).all(presetId);
+    const rows = db.prepare(`SELECT name, url, version, note, official, category, mod_id, sort_order FROM preset_mods WHERE preset_id = ? ORDER BY sort_order, id`).all(presetId);
     db.prepare(`DELETE FROM mods`).run();
-    const ins = db.prepare(`INSERT INTO mods (name, url, version, note, official, sort_order) VALUES (?, ?, ?, ?, ?, ?)`);
-    for (const m of rows) ins.run(m.name, m.url, m.version, m.note, m.official, m.sort_order);
+    const ins = db.prepare(`INSERT INTO mods (name, url, version, note, official, category, mod_id, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    for (const m of rows) ins.run(m.name, m.url, m.version, m.note, m.official, m.category, m.mod_id, m.sort_order);
 });
 
 // Non-destructive read of a preset's stored mods. Unlike loadPresetIntoMods,
 // this does not touch the live `mods` table. Used by /viewmods to preview.
 function getPresetMods(presetId) {
     return db.prepare(
-        `SELECT name, url, version, note, official, sort_order FROM preset_mods WHERE preset_id = ? ORDER BY sort_order, id`
+        `SELECT name, url, version, note, official, category, mod_id, sort_order FROM preset_mods WHERE preset_id = ? ORDER BY sort_order, id`
     ).all(presetId);
 }
 

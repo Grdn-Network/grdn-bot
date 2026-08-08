@@ -19,7 +19,8 @@ const { getCrewVCByChannel } = storage;
 const { buildNickname }   = require('./utils/nickname');
 const { updateTrainBoard } = require('./utils/trainBoard');
 const { ChannelType } = require('discord.js');
-const { TRAIN_BOARD_CHANNEL_ID, CREW_VC_CATEGORY_ID } = require('./config');
+const { TRAIN_BOARD_CHANNEL_ID, CREW_VC_CATEGORY_ID, MOD_SYNC_BETA } = require('./config');
+const { applyScan } = require('./utils/modSync');
 
 // voiceAlert is optional — gracefully absent if @discordjs/voice isn't installed
 let alertTrain, alertChannel;
@@ -105,6 +106,24 @@ module.exports = function startServer(client) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
         next();
+    });
+
+    // ── POST /mod-sync (BETA) ──────────────────────────────────────────────────
+    // Body: { mods: [{ id, name?, version?, url?, category? }] }
+    // GRDNConnect posts the host's scanned mod list; the bot fills the Auto Sync
+    // preset. Gated by MOD_SYNC_BETA so it stays a no-op until the beta is on.
+    app.post('/mod-sync', (req, res) => {
+        if (!MOD_SYNC_BETA) return res.status(503).json({ ok: false, status: 'beta_disabled' });
+        try {
+            const mods = req.body?.mods;
+            if (!Array.isArray(mods)) return res.status(400).json({ ok: false, status: 'bad_request' });
+            const summary = applyScan(mods);
+            console.log(`[ModSync] Applied scan: ${summary.total} mod(s) ${JSON.stringify(summary.counts)}${summary.skipped ? `, ${summary.skipped} skipped` : ''}`);
+            return res.json({ ok: true, ...summary });
+        } catch (err) {
+            console.error('[ModSync] apply failed:', err.message);
+            return res.status(500).json({ ok: false, status: 'error' });
+        }
     });
 
     // ── POST /radio-change ────────────────────────────────────────────────────

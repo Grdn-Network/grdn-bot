@@ -101,6 +101,12 @@ try { db.prepare(`ALTER TABLE mods ADD COLUMN version TEXT`).run(); } catch {}
 // Migrate: official flag — 1 = shown in embed (default), 0 = unofficial/hidden
 try { db.prepare(`ALTER TABLE mods ADD COLUMN official INTEGER NOT NULL DEFAULT 1`).run(); } catch {}
 db.prepare(`UPDATE mods SET official = 1 WHERE official IS NULL`).run();
+// Migrate: category, which ops-embed section a mod sits in.
+// 'required' (all clients need it), 'optional' (client-side), 'host' (host only).
+// Maps to DVMP MultiplayerCompatibility: All/Undefined -> required, Client -> optional, Host -> host.
+try { db.prepare(`ALTER TABLE mods ADD COLUMN category TEXT NOT NULL DEFAULT 'required'`).run(); } catch {}
+// Migrate: mod_id, the UMM mod id, so the Connect scan pairs by stable id, not display name.
+try { db.prepare(`ALTER TABLE mods ADD COLUMN mod_id TEXT`).run(); } catch {}
 
 /* -----------------------------------------------------
    MOD PRESETS
@@ -130,14 +136,18 @@ db.prepare(`
         sort_order INTEGER NOT NULL DEFAULT 0
     )
 `).run();
+// Migrate: category per mod within a preset (mirrors the live mods.category).
+try { db.prepare(`ALTER TABLE preset_mods ADD COLUMN category TEXT NOT NULL DEFAULT 'required'`).run(); } catch {}
+// Migrate: mod_id per mod within a preset (mirrors the live mods.mod_id).
+try { db.prepare(`ALTER TABLE preset_mods ADD COLUMN mod_id TEXT`).run(); } catch {}
 
 // Seed the default "Shared Preset" from the current mods on first run
 if (db.prepare(`SELECT COUNT(*) AS c FROM presets`).get().c === 0) {
     const info = db.prepare(`INSERT INTO presets (name, active, created_at) VALUES ('Shared Preset', 1, ?)`).run(Date.now());
     const presetId = info.lastInsertRowid;
-    const seedMods = db.prepare(`SELECT name, url, version, note, official, sort_order FROM mods ORDER BY sort_order, id`).all();
-    const insSeed = db.prepare(`INSERT INTO preset_mods (preset_id, name, url, version, note, official, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)`);
-    for (const m of seedMods) insSeed.run(presetId, m.name, m.url, m.version, m.note, m.official, m.sort_order);
+    const seedMods = db.prepare(`SELECT name, url, version, note, official, category, sort_order FROM mods ORDER BY sort_order, id`).all();
+    const insSeed = db.prepare(`INSERT INTO preset_mods (preset_id, name, url, version, note, official, category, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+    for (const m of seedMods) insSeed.run(presetId, m.name, m.url, m.version, m.note, m.official, m.category, m.sort_order);
     console.log(`[Presets] Seeded "Shared Preset" from ${seedMods.length} current mod(s).`);
 }
 
