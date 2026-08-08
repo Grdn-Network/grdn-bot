@@ -27,6 +27,8 @@ function applyMod(payload) {
             .run(payload.url, payload.version, payload.note, payload.modId);
     } else if (action === 'remove') {
         db.prepare(`DELETE FROM mods WHERE id = ?`).run(payload.modId);
+    } else if (action === 'category') {
+        db.prepare(`UPDATE mods SET category = ? WHERE id = ?`).run(payload.category, payload.modId);
     }
 
     // Mirror the change into the active preset
