@@ -105,6 +105,8 @@ db.prepare(`UPDATE mods SET official = 1 WHERE official IS NULL`).run();
 // 'required' (all clients need it), 'optional' (client-side), 'host' (host only).
 // Maps to DVMP MultiplayerCompatibility: All/Undefined -> required, Client -> optional, Host -> host.
 try { db.prepare(`ALTER TABLE mods ADD COLUMN category TEXT NOT NULL DEFAULT 'required'`).run(); } catch {}
+// Migrate: mod_id, the UMM mod id, so the Connect scan pairs by stable id, not display name.
+try { db.prepare(`ALTER TABLE mods ADD COLUMN mod_id TEXT`).run(); } catch {}
 
 /* -----------------------------------------------------
    MOD PRESETS
@@ -136,6 +138,8 @@ db.prepare(`
 `).run();
 // Migrate: category per mod within a preset (mirrors the live mods.category).
 try { db.prepare(`ALTER TABLE preset_mods ADD COLUMN category TEXT NOT NULL DEFAULT 'required'`).run(); } catch {}
+// Migrate: mod_id per mod within a preset (mirrors the live mods.mod_id).
+try { db.prepare(`ALTER TABLE preset_mods ADD COLUMN mod_id TEXT`).run(); } catch {}
 
 // Seed the default "Shared Preset" from the current mods on first run
 if (db.prepare(`SELECT COUNT(*) AS c FROM presets`).get().c === 0) {
