@@ -254,13 +254,26 @@ async function handleStart(interaction, typeOverride = null) {
         console.warn('[SessionConfig] BOT_PUBLIC_URL not set in .env — game will use UMM settings as fallback');
     }
 
-    const { status: embedStatus, interchangeMode: isInterchangeMode } = await syncEmbedFromMod(interaction.guild);
+    const { status: embedStatus } = await syncEmbedFromMod(interaction.guild);
 
-    // Apply Interchange Mode if the game reports it enabled in UMM Settings
-    if (isInterchangeMode) {
-        storage.setSessionOpsMode(sessionId, 'interchange');
-        console.log(`[Session] Interchange Mode active for session ${sessionId} (read from mod /server-info)`);
-    }
+    // Interchange Mode — SHELVED. We are not running interchange ops for now, and
+    // the mod now always reports interchangeMode false.
+    //
+    // Nothing about stats depended on this. Every /complete is still classified as
+    // local / hub_inbound / hub_outbound / interchange from the configured hub
+    // stations (see complete.js -> classifyLeg), so car-km, job counts, leg types
+    // and role labels are unaffected. All of that data is untouched.
+    //
+    // This block only wrote ops_sessions.ops_mode, which nothing ever read back.
+    // setSessionOpsMode/getSessionOpsMode are kept in storage.js for the revival.
+    //
+    // To revive: restore the setting in the mod's Settings.cs and the
+    // interchangeMode field in its /server-info, then uncomment below.
+    //   const { interchangeMode: isInterchangeMode } = await syncEmbedFromMod(...);
+    //   if (isInterchangeMode) {
+    //       storage.setSessionOpsMode(sessionId, 'interchange');
+    //       console.log(`[Session] Interchange Mode active for session ${sessionId}`);
+    //   }
 
     const sessionTypeLabel = { official: 'Official', unofficial: 'Unofficial', stress_test: 'Stress Test' }[sessionType] ?? sessionType;
 
@@ -270,7 +283,10 @@ async function handleStart(interaction, typeOverride = null) {
         .addFields(
             { name: 'Started by',    value: `<@${interaction.user.id}>`,                              inline: true },
             { name: 'Session Type',  value: sessionTypeLabel,                                         inline: true },
-            { name: 'Mode',          value: isInterchangeMode ? '🔄 Interchange' : 'Standard',       inline: true },
+            // Mode field dropped with Interchange Mode: it only ever read
+            // 'Standard' once interchange was shelved, so it was a field that
+            // could not vary. Restore alongside the block above.
+            //   { name: 'Mode', value: isInterchangeMode ? '🔄 Interchange' : 'Standard', inline: true },
             { name: 'Dispatch',      value: embedStatus,                                               inline: false },
         )
         .setTimestamp()
@@ -281,11 +297,12 @@ async function handleStart(interaction, typeOverride = null) {
     updateTrainBoard(interaction.client, interaction.guild.id, TRAIN_BOARD_CHANNEL_ID)
         .catch(err => console.error('[TrainBoard] session start update failed:', err));
 
-    const modeNote = isInterchangeMode ? '\n• **🔄 Interchange Mode** — stats and role labels active' : '';
+    // modeNote dropped with Interchange Mode; restore alongside the block above.
+    //   const modeNote = isInterchangeMode ? '\n• **🔄 Interchange Mode** — stats and role labels active' : '';
 
     return interaction.editReply({
         content:
-            `✅ ${sessionTypeLabel} ops session open.${modeNote}\n` +
+            `✅ ${sessionTypeLabel} ops session open.\n` +
             `• Crew: run **/setcrew** with your **train number** to join\n` +
             `• Dispatch embed: ${embedStatus}`,
     });

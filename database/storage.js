@@ -702,20 +702,20 @@ function setHubStations(hubArray) {
     db.prepare(`UPDATE dispatch_settings SET hub_stations = ? WHERE id = 1`).run(JSON.stringify(hubArray));
 }
 
-/**
- * Returns true if Interchange Mode is toggled on (pre-session flag).
- */
-function getInterchangeMode() {
-    const row = db.prepare(`SELECT interchange_mode FROM dispatch_settings WHERE id = 1`).get();
-    return (row?.interchange_mode ?? 0) === 1;
-}
-
-/**
- * Sets or clears the Interchange Mode pre-session flag.
- */
-function setInterchangeMode(enabled) {
-    db.prepare(`UPDATE dispatch_settings SET interchange_mode = ? WHERE id = 1`).run(enabled ? 1 : 0);
-}
+// Interchange Mode pre-session flag — SHELVED, and dead before that: nothing ever
+// called either of these. The live source was the mod's UMM setting arriving via
+// /server-info, never this column. The dispatch_settings.interchange_mode column
+// is deliberately left in place; dropping a column rewrites the table and there is
+// nothing to gain from it.
+//
+// function getInterchangeMode() {
+//     const row = db.prepare(`SELECT interchange_mode FROM dispatch_settings WHERE id = 1`).get();
+//     return (row?.interchange_mode ?? 0) === 1;
+// }
+//
+// function setInterchangeMode(enabled) {
+//     db.prepare(`UPDATE dispatch_settings SET interchange_mode = ? WHERE id = 1`).run(enabled ? 1 : 0);
+// }
 
 /**
  * Writes ops_mode onto an open session row.
@@ -898,8 +898,8 @@ module.exports = {
     getRegistrationByTrainNumber,
     getHubStations,
     setHubStations,
-    getInterchangeMode,
-    setInterchangeMode,
+    // getInterchangeMode / setInterchangeMode: shelved with Interchange Mode above.
+    // setSessionOpsMode/getSessionOpsMode stay exported for the revival.
     setSessionOpsMode,
     getSessionOpsMode,
     getLastCompletedSession,
