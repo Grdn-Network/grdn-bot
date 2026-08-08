@@ -14,11 +14,11 @@ const FETCH_TIMEOUT_MS = 5000;
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('complete')
-        .setDescription('Complete a Derail Valley job by job ID.')
+        .setDescription('Complete a Derail Valley job (defaults to your assigned train).')
         .addStringOption(opt =>
             opt.setName('jobid')
-               .setDescription('Job ID to complete (e.g. HB-SU-27)')
-               .setRequired(true)
+               .setDescription('Job ID (optional; defaults to the job on your assigned train)')
+               .setRequired(false)
         ),
 
     async execute(interaction) {
@@ -33,6 +33,18 @@ module.exports = {
 
         const jobId = interaction.options.getString('jobid');
 
+        // No job ID: default to the job on the caller's assigned crew train.
+        let trainNumber = null;
+        if (!jobId) {
+            const crew = storage.getCrewRaw(interaction.user.id);
+            trainNumber = crew?.train_number?.trim() || null;
+            if (!trainNumber)
+                return interaction.reply({
+                    content: '❌ No job ID given and you have no assigned train. Set one with `/setcrew`, or pass `jobid`.',
+                    flags: 64,
+                });
+        }
+
         // Defer ephemeral — failures stay hidden. Success deletes this and sends a
         // public follow-up so the channel sees the completed job.
         await interaction.deferReply({ ephemeral: true });
@@ -45,7 +57,7 @@ module.exports = {
             const response = await fetch(`${baseUrl}/complete-job`, {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({ jobId }),
+                body:    JSON.stringify(jobId ? { jobId } : { trainNumber }),
                 timeout: FETCH_TIMEOUT_MS,
             });
 
@@ -82,10 +94,12 @@ module.exports = {
 
                 // Delete the ephemeral defer, then post a public success message.
                 await interaction.deleteReply();
-                return interaction.followUp(`✅ Job **${jobId}** completed. Payment has been made.`);
+                const doneId = result.jobId || jobId;
+                return interaction.followUp(`✅ Job **${doneId}** completed. Payment has been made.`);
             } else {
+                const label  = jobId || (trainNumber ? `train ${trainNumber}` : 'the job');
                 const detail = result.error ? `\n> ${result.error}` : '';
-                return fail(`⚠️ Could not complete **${jobId}**.${detail}`);
+                return fail(`⚠️ Could not complete **${label}**.${detail}`);
             }
         } catch (err) {
             console.error('[GRDNConnect] complete-job error:', err);

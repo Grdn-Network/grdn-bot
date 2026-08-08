@@ -13,6 +13,7 @@
 //   GET  /ping           — health check
 
 const express = require('express');
+const fetch   = require('node-fetch');
 const storage = require('./database/storage');
 const db      = require('./database/db');
 const { getCrewVCByChannel } = storage;
@@ -536,6 +537,53 @@ module.exports = function startServer(client) {
     });
 
     // ── Health check ──────────────────────────────────────────────────────────
+    // ── POST /crew-action ─────────────────────────────────────────────────────
+    // Called by GRDNConnect (in-game radio or chat command) to complete or
+    // activate the job on the caller's assigned train. Resolves the requester by
+    // Steam ID -> Discord -> assigned crew train, then forwards to the host mod's
+    // /complete-job or /activate-job by train number. Never uses the live loco.
+    // Body: { steamId, action: 'complete' | 'activate', jobId? }
+    app.post('/crew-action', async (req, res) => {
+        const { steamId, action, jobId } = req.body ?? {};
+        const act = action === 'activate' ? 'activate' : 'complete';
+        if (!steamId && !jobId)
+            return res.status(400).json({ ok: false, error: 'Missing steamId or jobId' });
+
+        // Resolve the caller's assigned train from their Steam link (unless an
+        // explicit jobId was supplied).
+        let trainNumber = null;
+        if (!jobId) {
+            const link = steamId ? storage.getSteamLink(String(steamId)) : null;
+            if (!link)
+                return res.json({ ok: false, error: 'Your Steam is not linked to Discord yet' });
+            const crew = storage.getCrewRaw(link.discordId);
+            trainNumber = crew?.train_number?.trim() || null;
+            if (!trainNumber)
+                return res.json({ ok: false, error: 'You have no assigned train (use /setcrew)' });
+        }
+
+        const baseUrl = storage.getDvBaseUrl();
+        if (!baseUrl)
+            return res.json({ ok: false, error: 'No host connection configured' });
+
+        try {
+            const r = await fetch(`${baseUrl}/${act}-job`, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify(jobId ? { jobId } : { trainNumber }),
+                timeout: 5000,
+            });
+            let result;
+            try { result = await r.json(); } catch { result = null; }
+            if (!result)
+                return res.json({ ok: false, error: 'Unexpected response from the host game' });
+            return res.json(result);
+        } catch (err) {
+            console.error('[CrewAction] host mod unreachable:', err.message);
+            return res.json({ ok: false, error: 'Could not reach the host game' });
+        }
+    });
+
     app.get('/ping', (req, res) => res.json({ ok: true }));
 
     app.listen(PORT, () => {
