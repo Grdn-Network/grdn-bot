@@ -60,7 +60,7 @@ module.exports = {
 
         // ── 2. Voice alert — join their VC and play stitched clip (fire and forget) ──
         if (alertTrain) {
-            alertTrain(interaction.guild, train, 'call').catch(err => {
+            alertTrain(interaction.guild, train).catch(err => {
                 console.error('[call] Voice alert failed:', err.message);
             });
         }

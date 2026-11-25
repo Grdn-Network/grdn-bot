@@ -8,7 +8,7 @@
 //
 // Endpoints:
 //   POST /radio-change   — move a crew member's Discord VC based on train number
-//   POST /defect-alert   — announce a hotbox/defect to opted-in crew
+//   POST /defect-alert   (shelved) acks and drops stray posts
 //   POST /update-crew    — re-assign a crew member to a different train (in-game /setcrew)
 //   GET  /ping           — health check
 
@@ -20,14 +20,6 @@ const { buildNickname }   = require('./utils/nickname');
 const { updateTrainBoard } = require('./utils/trainBoard');
 const { ChannelType } = require('discord.js');
 const { TRAIN_BOARD_CHANNEL_ID, CREW_VC_CATEGORY_ID } = require('./config');
-
-// voiceAlert is optional — gracefully absent if @discordjs/voice isn't installed
-let alertTrain, alertChannel;
-try {
-    ({ alertTrain, alertChannel } = require('./utils/voiceAlert'));
-} catch {
-    alertTrain = alertChannel = null;
-}
 
 const sessionAuth = require('./utils/sessionAuth');
 
@@ -223,56 +215,10 @@ module.exports = function startServer(client) {
     });
 
     // ── POST /defect-alert ────────────────────────────────────────────────────
-    // Body: { trainNumber, defectType, message, detail? }
-    //
-    // GRDNConnect sends a pre-formatted CSX MicroHBD-style message.
-    // Bot joins the VC of opted-in crew and plays it via TTS.
-    app.post('/defect-alert', async (req, res) => {
-        // SHELVED: defect detection was scrapped. The mod no longer sends these, and
-        // we ack-and-drop any stray/forged POST so the bot never joins a VC to "yap"
-        // a false alarm (grdnConnect defect monitor is disabled). Voice playback for
-        // /call is unaffected. Restore the body below to revive defect alerts.
-        return res.json({ ok: true, shelved: true });
-
-        // eslint-disable-next-line no-unreachable
-        const { trainNumber, defectType, message, detail } = req.body ?? {};
-        if (!trainNumber || !defectType || !message) {
-            return res.status(400).json({ error: 'Missing trainNumber, defectType, or message' });
-        }
-        res.json({ ok: true });
-
-        try {
-            for (const [, guild] of client.guilds.cache) {
-                // Alert ALL opted-in crew regardless of which train the defect is on.
-                // If you've opted in, you hear every defect across the whole session.
-                const allCrew = storage.getAllCrew(guild.id);
-
-                const alertedChannels = new Set();
-                for (const c of allCrew) {
-                    const pref = db.prepare(
-                        `SELECT enabled FROM defect_prefs WHERE user_id = ?`
-                    ).get(c.userId);
-
-                    if (!pref?.enabled) continue;
-
-                    const member = await guild.members.fetch(c.userId).catch(() => null);
-                    const vc = member?.voice?.channel;
-                    if (!vc || alertedChannels.has(vc.id)) continue;
-
-                    alertedChannels.add(vc.id);
-                    console.log(`[Defect] ${defectType} (train ${trainNumber}) → ${c.userId} in ${vc.name}`);
-
-                    if (alertChannel) {
-                        alertChannel(guild, vc.id, trainNumber, defectType, detail ?? null).catch(err =>
-                            console.error('[Defect] Voice alert failed:', err.message)
-                        );
-                    }
-                }
-            }
-        } catch (err) {
-            console.error('[Defect] Error:', err.message);
-        }
-    });
+    // SHELVED: defect detection was scrapped, and the voice alerts that announced
+    // defects are gone too. The mod no longer sends these. Ack and drop any stray
+    // or forged POST. The old body is in git history.
+    app.post('/defect-alert', (req, res) => res.json({ ok: true, shelved: true }));
 
     // ── POST /update-crew ─────────────────────────────────────────────────────
     // Body: { fromTrainNumber?, toTrainNumber, locoType?, steamId?, steamName? }
