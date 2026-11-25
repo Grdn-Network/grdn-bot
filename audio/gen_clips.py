@@ -1,5 +1,5 @@
 """
-gen_clips.py  —  generate all voice sets for GRDN defect detector alerts.
+gen_clips.py: generate the /call voice page clips for each voice set.
 
 Usage:
     python gen_clips.py                  # generate guy + christopher
@@ -32,25 +32,7 @@ CLIPS = {
     "7":                                    "Seven",
     "8":                                    "Eight",
     "9":                                    "Nine",
-    "attention":                            "Attention",
-    "emergency":                            "Emergency",
     "train":                                "Train",
-    "grdn_detector":                        "Guardian Detector",
-    "hotbox_detected":                      "Hot box detected",
-    "front_truck":                          "Front truck",
-    "rear_truck":                           "Rear truck",
-    "wheel_bearing":                        "Wheel bearing",
-    "derailment_detected":                  "Derailment detected",
-    "air_hose_defect":                      "Air hose defect",
-    "dragging_equipment":                   "Dragging equipment",
-    "no_defects_detected":                  "No defects detected",
-    "reduce_speed_inspect":                 "Reduce speed and inspect",
-    "stop_immediately_contact_dispatch":    "Stop immediately and contact dispatch",
-    "check_brake_line_reduce_speed":        "Check brake line and reduce speed",
-    "stop_train_inspect_consist":           "Stop train and inspect consist",
-    "cars":                                 "Cars",
-    "speed":                                "Speed",
-    "end_of_message":                       "End of message",
     "contact_dispatch":                     "Contact dispatch",
 }
 

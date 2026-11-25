@@ -1,39 +1,11 @@
 // utils/voiceAlert.js
-// Joins a Discord voice channel, plays a stitched audio alert, then disconnects.
+// /call's voice page. Joins the crew's voice channel, plays "Train <digits>,
+// contact dispatch" stitched from pre-recorded .wav clips, then leaves.
 //
-// HOW IT WORKS
-// ────────────
-// Audio is built by concatenating pre-recorded .wav clips from audio/clips/.
-// This matches how real railroad defect detectors operate — a bank of recorded
-// words played in sequence, not real-time synthesis.
-//
-// REPLACING PLACEHOLDER CLIPS
-// ────────────────────────────
-// The clips/ folder ships with Microsoft David placeholder recordings.
-// To use real recordings (e.g. your own voice), just drop in new .wav files
-// with the same names — no code changes needed.
-//
-// CLIP INVENTORY (30 files)
-// ──────────────────────────
-//  Digits      : 0.wav – 9.wav
-//  Openers     : attention.wav, emergency.wav, train.wav
-//  Station ID  : grdn_detector.wav
-//  Defects     : hotbox_detected.wav, front_truck.wav, rear_truck.wav,
-//                wheel_bearing.wav, derailment_detected.wav,
-//                air_hose_defect.wav, dragging_equipment.wav,
-//                no_defects_detected.wav
-//  Actions     : reduce_speed_inspect.wav, stop_immediately_contact_dispatch.wav,
-//                check_brake_line_reduce_speed.wav, stop_train_inspect_consist.wav
-//  Consist     : cars.wav, speed.wav
-//  Closers     : end_of_message.wav, contact_dispatch.wav
-//
-// DEFECT TYPES (passed from DefectMonitor → server.js → here)
-//  'Hot Box'           detail: 'front truck' | 'rear truck' | 'wheel bearing' | null
-//  'Derailment'        detail: null
-//  'Air Hose Defect'   detail: null
-//  'Dragging Equipment' detail: null
-//  'Consist Check'     detail: '<carCount> <speedMph>'  e.g. '24 45'
-//  'call'              detail: null  (used by /call command)
+// Clips live in audio/clips/<voice>/. Each voice folder needs 12 files:
+//   0.wav to 9.wav, train.wav, contact_dispatch.wav
+// A folder with contact_dispatch.wav counts as a voice; one is picked at random
+// per call. To re-record, drop in new .wav files with the same names.
 
 const {
     joinVoiceChannel,
@@ -59,11 +31,9 @@ const VOICES_DIR          = path.join(__dirname, '../audio/clips');
 const CONNECT_TIMEOUT_MS  = 15_000;
 const PLAYBACK_TIMEOUT_MS = 30_000;
 
-// Each subfolder of VOICES_DIR is a voice set.
-// Auto-detected at startup: included if it contains grdn_detector.wav.
-// Add wife's recordings to audio/clips/wife/ and it appears automatically.
+// Each subfolder of VOICES_DIR with contact_dispatch.wav is a voice set.
 const VOICE_SETS = fs.readdirSync(VOICES_DIR)
-    .filter(name => fs.existsSync(path.join(VOICES_DIR, name, 'grdn_detector.wav')));
+    .filter(name => fs.existsSync(path.join(VOICES_DIR, name, 'contact_dispatch.wav')));
 
 if (VOICE_SETS.length === 0)
     console.error('[VoiceAlert] No voice sets found — check audio/clips/ subfolders.');
@@ -81,64 +51,9 @@ function digitsOf(n) {
     return String(n).replace(/\D/g, '').split('');
 }
 
-// ── Clip sequence builder ─────────────────────────────────────────────────────
-// Returns an ordered array of clip names (without .wav extension).
-// Each name maps to a file in audio/clips/.
-
-function buildClipSequence(trainNumber, defectType, detail = null) {
-    const digits = digitsOf(trainNumber);
-
-    switch (defectType) {
-
-        case 'Consist Check': {
-            // detail = '<carCount> <speedMph>' — both spoken digit-by-digit
-            const seq = ['train', ...digits, 'grdn_detector', 'no_defects_detected'];
-            if (detail) {
-                const [cars, spd] = detail.trim().split(/\s+/);
-                if (cars) seq.push(...digitsOf(cars), 'cars');
-                if (spd && spd !== '0') seq.push('speed', ...digitsOf(spd));
-            }
-            seq.push('end_of_message');
-            return seq;
-        }
-
-        case 'Derailment':
-            return [
-                'emergency', 'train', ...digits, 'grdn_detector',
-                'derailment_detected', 'stop_immediately_contact_dispatch',
-                'end_of_message',
-            ];
-
-        case 'Hot Box': {
-            const seq = ['attention', 'train', ...digits, 'grdn_detector', 'hotbox_detected'];
-            if (detail === 'front truck')   seq.push('front_truck');
-            else if (detail === 'rear truck')    seq.push('rear_truck');
-            else if (detail === 'wheel bearing') seq.push('wheel_bearing');
-            seq.push('reduce_speed_inspect', 'end_of_message');
-            return seq;
-        }
-
-        case 'Air Hose Defect':
-            return [
-                'attention', 'train', ...digits, 'grdn_detector',
-                'air_hose_defect', 'check_brake_line_reduce_speed',
-                'end_of_message',
-            ];
-
-        case 'Dragging Equipment':
-            return [
-                'attention', 'train', ...digits, 'grdn_detector',
-                'dragging_equipment', 'stop_train_inspect_consist',
-                'end_of_message',
-            ];
-
-        case 'call':
-            // No "end of message" — mimics a radio page
-            return ['train', ...digits, 'contact_dispatch'];
-
-        default:
-            throw new Error(`[VoiceAlert] Unknown defect type: "${defectType}"`);
-    }
+// Clip names (no .wav) for a page. No "end of message", so it sounds like a radio page.
+function callSequence(trainNumber) {
+    return ['train', ...digitsOf(trainNumber), 'contact_dispatch'];
 }
 
 // ── Pure-JS WAV concat ────────────────────────────────────────────────────────
@@ -366,7 +281,7 @@ async function playInChannel(voiceChannel, clipNames, clipsDir = pickVoiceDir())
 
 // ── Alert a train crew by train number ───────────────────────────────────────
 
-async function alertTrain(guild, trainNumber, defectType, detail = null) {
+async function alertTrain(guild, trainNumber) {
     const crew    = storage.getAllCrew(guild.id);
     const targets = crew.filter(c => String(c.trainNumber) === String(trainNumber));
 
@@ -386,30 +301,8 @@ async function alertTrain(guild, trainNumber, defectType, detail = null) {
 
     const clipsDir = pickVoiceDir();
     console.log(`[VoiceAlert] Using voice: ${path.basename(clipsDir)}`);
-    const clips = buildClipSequence(trainNumber, defectType, detail);
-    await playInChannel(targetVC, clips, clipsDir);
+    await playInChannel(targetVC, callSequence(trainNumber), clipsDir);
     return { success: true };
 }
 
-// ── Alert a specific VC by channel ID ────────────────────────────────────────
-
-async function alertChannel(guild, channelId, trainNumber, defectType, detail = null) {
-    const channel = guild.channels.cache.get(channelId);
-    if (!channel?.isVoiceBased()) {
-        return { success: false, reason: 'Channel not found or not a voice channel' };
-    }
-    const clipsDir = pickVoiceDir();
-    console.log(`[VoiceAlert] Using voice: ${path.basename(clipsDir)}`);
-    const clips = buildClipSequence(trainNumber, defectType, detail);
-    await playInChannel(channel, clips, clipsDir);
-    return { success: true };
-}
-
-module.exports = {
-    playInChannel,
-    alertTrain,
-    alertChannel,
-    buildClipSequence,
-    VOICES_DIR,
-    VOICE_SETS,
-};
+module.exports = { alertTrain };
