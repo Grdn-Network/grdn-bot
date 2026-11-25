@@ -1,15 +1,13 @@
-const { Client, GatewayIntentBits, Collection, ChannelType } = require('discord.js');
+const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
-const { CRASH_LOG_CHANNEL_ID, ADMIN_ROLE, TRAIN_BOARD_CHANNEL_ID, CREW_VC_CATEGORY_ID } = require('./config');
-const fetch = require('node-fetch');
+const { CRASH_LOG_CHANNEL_ID, ADMIN_ROLE, TRAIN_BOARD_CHANNEL_ID } = require('./config');
 const storage = require('./database/storage');
 const { updateTrainBoard } = require('./utils/trainBoard');
 const { runRetention } = require('./utils/purgeForensics');
 const { sweepStaleSessions, SWEEP_INTERVAL_MS } = require('./utils/staleSessions');
-const sessionAuth = require('./utils/sessionAuth');
-const { cfAccessHeaders } = require('./utils/hostConnect');
+const { pushSessionConfig, isCrewChannel } = require('./utils/sessionConfig');
 
 const CRASH_LOG_PATH = 'C:\\GRDN\\bot\\crash.log';
 fs.mkdirSync(path.dirname(CRASH_LOG_PATH), { recursive: true });
@@ -58,9 +56,10 @@ require('./events/scamScanner')(client);
 // How often to poll GRDNConnect for live loco data (ms)
 const TRAIN_BOARD_POLL_MS = 30_000;
 
-// How often to re-push the crew channel list to the game radio (ms)
-// Picks up new crew VCs created during the session without a restart.
-const CHANNEL_PUSH_MS = 90_000;
+// Safety-net re-push of session config (ms). Channel changes push on the Discord
+// event, so this exists only to recover a host that restarted mid-session and lost
+// the config it was holding.
+const SESSION_CONFIG_RECONCILE_MS = 600_000;
 
 client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}`);
@@ -97,42 +96,41 @@ client.once('ready', () => {
         }
     }, TRAIN_BOARD_POLL_MS);
 
-    // Periodically re-push the live crew VC list to the game's radio mode.
-    // Runs every 90s so newly-created crew VCs appear in GRDN RADIO without a restart.
+    // Safety net only. Forced, because the point is a host that restarted and is
+    // holding nothing, which no fingerprint comparison can detect.
     setInterval(async () => {
         for (const [, guild] of client.guilds.cache) {
             try {
                 if (!storage.getActiveSession(guild.id)) continue;
-                const dvUrl = storage.getDvBaseUrl();
-                if (!dvUrl) continue;
-
-                const channels = [...guild.channels.cache.values()]
-                    .filter(ch => ch.parentId === CREW_VC_CATEGORY_ID && ch.type === ChannelType.GuildVoice)
-                    .sort((a, b) => a.rawPosition - b.rawPosition)
-                    .map(ch => ({ name: ch.name, vcId: ch.id }));
-
-                // Re-send the live session token, never HTTP_SECRET: Connect relays this
-                // value to every client and serves it from its public /client-config.
-                // No token during an active session means the bot restarted, so mint one.
-                const secret = sessionAuth.currentToken() ?? sessionAuth.mintToken();
-
-                fetch(`${dvUrl}/session-config`, {
-                    method:  'POST',
-                    headers: { 'Content-Type': 'application/json', ...cfAccessHeaders() },
-                    body:    JSON.stringify({
-                        botUrl:   process.env.BOT_PUBLIC_URL || '',
-                        secret,
-                        channels,
-                    }),
-                    timeout: 3000,
-                }).then(r => {
-                    if (r.ok) console.log(`[ChannelPush] ${channels.length} channel(s) → game`);
-                }).catch(() => {}); // game offline is normal — silent fail
+                await pushSessionConfig(guild, { force: true, reason: 'reconcile' });
             } catch (err) {
-                console.error('[ChannelPush]', guild.id, err.message);
+                console.error('[SessionConfig] reconcile', guild.id, err.message);
             }
         }
-    }, CHANNEL_PUSH_MS);
+    }, SESSION_CONFIG_RECONCILE_MS);
+});
+
+// ── Crew channel changes push immediately ─────────────────────────────────────
+// Covered by the Guilds intent. The push is skipped when the resulting channel
+// list is unchanged, so a rename to the same name or an unrelated edit costs
+// nothing. Only channels in the crew VC category are considered.
+async function onCrewChannelChange(channel, reason) {
+    try {
+        if (!isCrewChannel(channel)) return;
+        if (!channel.guild || !storage.getActiveSession(channel.guild.id)) return;
+        await pushSessionConfig(channel.guild, { reason });
+    } catch (err) {
+        console.error('[SessionConfig]', reason, err.message);
+    }
+}
+
+client.on('channelCreate', ch => onCrewChannelChange(ch, 'crew VC created'));
+client.on('channelDelete', ch => onCrewChannelChange(ch, 'crew VC deleted'));
+
+// A channel can move into or out of the crew category, so check both states.
+client.on('channelUpdate', (before, after) => {
+    if (isCrewChannel(before) || isCrewChannel(after))
+        onCrewChannelChange(after, 'crew VC updated');
 });
 
 // Shared crash handler

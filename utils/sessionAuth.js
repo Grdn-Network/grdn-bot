@@ -1,41 +1,60 @@
 // utils/sessionAuth.js
 // Per-session auth tokens for GRDNConnect -> bot requests.
 //
-// Replaces the reused global HTTP_SECRET with a random token minted when an ops
-// session opens and revoked when it closes. The bot pushes the token to the host
-// via /session-config; the host relays it to clients via /client-config, so no
-// secret is ever compiled into the distributed mod.
+// Two tokens are minted per session, not one:
+//
+//   host   — held only by the host's game. Opens every endpoint.
+//   client — relayed by the host to its clients over the Derail Valley multiplayer
+//            packet channel. Opens only the endpoints a client needs for radio and
+//            crew voice (see CLIENT_ROUTES in server.js).
+//
+// The split exists because a client has to be given a credential for voice
+// switching to work at all, and that credential is in the hands of every player in
+// the session. A single token would mean any client could also reassign crew, push
+// stats or overwrite the mod preset.
 //
 // In-memory by design: tokens live only for the running process. A bot restart
-// mid-session drops the token; the 90s channel push in index.js mints a new one
-// and sends it to the host. Fine for ops-length sessions.
+// mid-session drops them, and the next config push mints a fresh pair and sends it
+// to the host. Fine for ops-length sessions.
 const crypto = require('crypto');
 
-// Only one ops session runs at a time per server, so a single active token is enough.
-const activeTokens = new Set();
+// Only one ops session runs at a time per server, so one pair is enough.
+// Map of token -> role.
+let tokens = new Map();
 
-// Mint a fresh token, replacing any previous one, and return it.
-function mintToken() {
-    const token = crypto.randomBytes(24).toString('hex');
-    activeTokens.clear();
-    activeTokens.add(token);
-    return token;
+// Mint a fresh pair, replacing any previous one.
+function mintTokens() {
+    const hostToken   = crypto.randomBytes(24).toString('hex');
+    const clientToken = crypto.randomBytes(24).toString('hex');
+
+    tokens = new Map([
+        [hostToken,   'host'],
+        [clientToken, 'client'],
+    ]);
+
+    return { hostToken, clientToken };
 }
 
-// True only for a currently-valid session token.
-function isValid(token) {
-    return typeof token === 'string' && token.length > 0 && activeTokens.has(token);
+// 'host', 'client', or null when the token is unknown or absent.
+function roleOf(token) {
+    if (typeof token !== 'string' || token.length === 0) return null;
+    return tokens.get(token) ?? null;
 }
 
-// The live session token, or null if there is none (no session, or the bot restarted).
-function currentToken() {
-    const [token] = activeTokens;
-    return token ?? null;
+// The live pair, or null for each token with no session (or after a bot restart).
+function currentTokens() {
+    let hostToken = null;
+    let clientToken = null;
+    for (const [token, role] of tokens) {
+        if (role === 'host')   hostToken   = token;
+        if (role === 'client') clientToken = token;
+    }
+    return { hostToken, clientToken };
 }
 
-// Drop all tokens. Call on session end.
+// Drop both tokens. Call on session end.
 function clear() {
-    activeTokens.clear();
+    tokens = new Map();
 }
 
-module.exports = { mintToken, isValid, currentToken, clear };
+module.exports = { mintTokens, roleOf, currentTokens, clear };
