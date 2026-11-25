@@ -7,7 +7,7 @@
 //   board — force-post a fresh Train Board
 //   embed — post or restore the Operations dispatch embed
 
-const { SlashCommandBuilder, EmbedBuilder, ChannelType } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const fetch    = require('node-fetch');
 const fs       = require('fs');
 const path     = require('path');
@@ -19,11 +19,12 @@ const { buildDispatchEmbed, buildDispatchComponents, deriveDvConnectUrl } = requ
 const { deleteAllCrewVCs }                       = require('../../utils/crewVCManager');
 const sessionAuth                                = require('../../utils/sessionAuth');
 const { cfAccessHeaders }                        = require('../../utils/hostConnect');
+const { pushSessionConfig, forgetHost }          = require('../../utils/sessionConfig');
 const { sendLog }                                = require('../../logging/logHelper');
 const loggingConfig                              = require('../../config/logging.json');
 const {
     ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE, DVMP_COMMAND_ROLE,
-    DISPATCH_CHANNEL_ID, TRAIN_BOARD_CHANNEL_ID, CREW_VC_CATEGORY_ID, OPS_CATEGORY_ID,
+    DISPATCH_CHANNEL_ID, TRAIN_BOARD_CHANNEL_ID, OPS_CATEGORY_ID,
 } = require('../../config');
 const { requireCategory } = require('../../utils/commandChannel');
 
@@ -212,32 +213,11 @@ async function handleStart(interaction) {
     const connectUrl = deriveDvConnectUrl(rdLink);
     console.log(`[Session] ${interaction.user.tag} → tunnel "${tunnelName}" → ${connectUrl}`);
 
-    // ── Push bot URL, secret, and live crew channels to GRDNConnect ──────────
-    // Fire-and-forget — don't let game-unreachable block the Discord response.
-    const botPublicUrl  = process.env.BOT_PUBLIC_URL || '';
-    // Mint a fresh per-session token instead of reusing the global secret.
-    // The host relays it to clients via /client-config, so nothing is baked in.
-    const botSecret     = sessionAuth.mintToken();
-    const crewChannels  = interaction.guild.channels.cache
-        .filter(ch => ch.parentId === CREW_VC_CATEGORY_ID && ch.type === ChannelType.GuildVoice)
-        .sort((a, b) => a.rawPosition - b.rawPosition)
-        .map(ch => ({ name: ch.name, vcId: ch.id }));
-
-    if (botPublicUrl && connectUrl) {
-        fetch(`${connectUrl}/session-config`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json', ...cfAccessHeaders() },
-            body:    JSON.stringify({ botUrl: botPublicUrl, secret: botSecret, channels: crewChannels }),
-            timeout: 3000,
-        }).then(r => {
-            if (!r.ok) console.warn(`[SessionConfig] Game returned ${r.status}`);
-            else       console.log(`[SessionConfig] Pushed to game — ${crewChannels.length} channel(s), url=${botPublicUrl}`);
-        }).catch(err =>
-            console.warn('[SessionConfig] Could not reach game — manual UMM config required:', err.message)
-        );
-    } else {
-        console.warn('[SessionConfig] BOT_PUBLIC_URL not set in .env — game will use UMM settings as fallback');
-    }
+    // ── Push bot URL, tokens and live crew channels to GRDNConnect ───────────
+    // Fire-and-forget: don't let an unreachable game block the Discord response.
+    // A fresh token pair is minted here, so this push is unconditional. The host
+    // keeps the host token and relays the client token to its clients.
+    pushSessionConfig(interaction.guild, { mint: true, reason: 'session start' });
 
     const { status: embedStatus } = await syncEmbedFromMod(interaction.guild);
 
@@ -339,7 +319,8 @@ async function handleEnd(interaction) {
 
     // Close session — writes final minutes to ops_log, clears session_crew
     const sessionId = storage.closeSession(guild.id, interaction.user.id, now);
-    sessionAuth.clear(); // revoke this session's auth token
+    sessionAuth.clear(); // revoke both of this session's auth tokens
+    forgetHost();        // next session pushes config unconditionally
 
     let reset = 0, failed = 0;
 

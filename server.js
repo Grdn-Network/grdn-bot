@@ -4,12 +4,20 @@
 //
 // Environment variables:
 //   HTTP_PORT   — port to listen on (default: 3000)
-//   HTTP_SECRET — shared secret; set the same value in GRDNConnect settings
+//   HTTP_SECRET — legacy global secret, accepted as host-level during migration
+//
+// Auth: every request carries x-secret, which is one of the two tokens minted for
+// the session (see utils/sessionAuth.js). A host token opens everything. A client
+// token opens only CLIENT_ROUTES below, because every player in the session holds
+// one.
 //
 // Endpoints:
 //   POST /radio-change   — move a crew member's Discord VC based on train number
-//   POST /defect-alert   (shelved) acks and drops stray posts
+//   GET  /radio-channels — the crew voice channel list
 //   POST /update-crew    — re-assign a crew member to a different train (in-game /setcrew)
+//   POST /stats-push     — session stats from the host
+//   POST /mod-sync       — (beta) the host's scanned mod list
+//   POST /defect-alert   (shelved) acks and drops stray posts
 //   GET  /ping           — health check
 
 const express = require('express');
@@ -86,17 +94,36 @@ module.exports = function startServer(client) {
     app.use(express.json());
 
     // ── Auth middleware ───────────────────────────────────────────────────────
+    // Routes a client token may use. Everything else is host-only.
+    //
+    // A client token is held by every player in the session, because the host has
+    // to hand one over for crew voice switching to work. So it opens only what a
+    // client genuinely needs: moving its own voice channel, and reading the channel
+    // list. Crew reassignment, stats and the mod preset stay host-only.
+    const CLIENT_ROUTES = new Set(['/radio-change', '/radio-channels', '/ping']);
+
     app.use((req, res, next) => {
         const provided = req.headers['x-secret'];
+
         // Preferred: a live per-session token (minted at /session start). During
         // migration also accept the global HTTP_SECRET so already-deployed mods
-        // keep working. TODO(1.0): drop the HTTP_SECRET branch once every client
-        // uses session tokens.
-        const authorised = sessionAuth.isValid(provided) || (SECRET && provided === SECRET);
-        if (!authorised) {
+        // keep working, treating it as host-level. TODO(1.0): drop the HTTP_SECRET
+        // branch once every host runs a build that uses session tokens.
+        const role = sessionAuth.roleOf(provided)
+            ?? ((SECRET && provided === SECRET) ? 'host' : null);
+
+        if (!role) {
             console.warn(`[HTTP] Rejected unauthorised request from ${req.ip}`);
             return res.status(401).json({ error: 'Unauthorized' });
         }
+
+        const path = req.path.toLowerCase();
+        if (role === 'client' && !CLIENT_ROUTES.has(path)) {
+            console.warn(`[HTTP] Client token refused for ${req.method} ${path} from ${req.ip}`);
+            return res.status(403).json({ error: 'Forbidden', detail: 'host token required' });
+        }
+
+        req.authRole = role;
         next();
     });
 
