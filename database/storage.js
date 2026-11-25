@@ -1,6 +1,7 @@
 // database/storage.js
 // Uses your existing SQLite database connection
 const db = require('./db');
+const { isTunnelUrl } = require('../utils/hostConnect');
 
 // ===============================
 // Ensure required tables exist
@@ -396,32 +397,24 @@ function clearAllAssignments(guildId) {
 // ===============================
 
 /**
- * Returns the full base URL for the DV connection, or null if unset.
- * Supports both the new dv_url (full URL) and the legacy dv_host/dv_port format.
+ * Returns the current host's GRDNConnect tunnel URL, or null if unset.
+ * Only https://<name>-connect.grdnnetwork.com is returned; raw IPs are refused.
  */
 function getDvBaseUrl() {
-    const row = db.prepare(`SELECT dv_host, dv_port, dv_url FROM dv_settings WHERE id = 1`).get();
-    if (!row) return null;
-    if (row.dv_url) return row.dv_url.replace(/\/$/, ''); // strip trailing slash
-    if (row.dv_host && row.dv_port) return `http://${row.dv_host}:${row.dv_port}`;
-    return null;
+    const row = db.prepare(`SELECT dv_url FROM dv_settings WHERE id = 1`).get();
+    const url = row?.dv_url ? row.dv_url.replace(/\/$/, '') : null; // strip trailing slash
+    return isTunnelUrl(url) ? url : null;
 }
 
 /**
- * Saves a full DV connection URL (e.g. https://guardian.connect.grdnnetwork.com or http://1.2.3.4:7230).
+ * Saves the current host's GRDNConnect tunnel URL. Anything else is refused.
  */
 function setDvUrl(url) {
+    if (!isTunnelUrl(url)) {
+        console.warn('[DV] Refused to save a non-tunnel host URL');
+        return;
+    }
     db.prepare(`UPDATE dv_settings SET dv_url = ?, dv_host = NULL, dv_port = NULL WHERE id = 1`).run(url);
-}
-
-/** @deprecated Use getDvBaseUrl() instead */
-function getDvSettings() {
-    return db.prepare(`SELECT dv_host, dv_port, dv_url FROM dv_settings WHERE id = 1`).get() || null;
-}
-
-/** @deprecated Use setDvUrl() instead */
-function setDvSettings(host, port) {
-    db.prepare(`UPDATE dv_settings SET dv_host = ?, dv_port = ?, dv_url = NULL WHERE id = 1`).run(host, port);
 }
 
 // ===============================
@@ -873,8 +866,6 @@ module.exports = {
     setTrainBoardMessageId,
     getDvBaseUrl,
     setDvUrl,
-    getDvSettings,
-    setDvSettings,
     classifyCategory,
     getActiveSession,
     sessionTracksHours,

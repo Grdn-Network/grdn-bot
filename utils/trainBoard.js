@@ -6,6 +6,7 @@
 const { ChannelType } = require('discord.js');
 const fetch = require('node-fetch');
 const storage = require('../database/storage');
+const { cfAccessHeaders } = require('./hostConnect');
 
 const LOCO_FETCH_TIMEOUT_MS = 2000;
 
@@ -168,7 +169,7 @@ async function fetchLocoMap(guildId) {
     const url = `${dvUrl}/locos`;
     console.log('[TrainBoard] fetchLocoMap: fetching', url);
 
-    const res = await fetch(url, { timeout: LOCO_FETCH_TIMEOUT_MS });
+    const res = await fetch(url, { headers: cfAccessHeaders(), timeout: LOCO_FETCH_TIMEOUT_MS });
     if (!res.ok) {
       console.log('[TrainBoard] fetchLocoMap: HTTP', res.status, 'from', url);
       return null;

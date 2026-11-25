@@ -13,6 +13,7 @@ const fetch   = require('node-fetch');
 const storage = require('../../database/storage');
 const { OPS_CHAT_CHANNEL_ID } = require('../../config');
 const { requireChannel } = require('../../utils/commandChannel');
+const { cfAccessHeaders } = require('../../utils/hostConnect');
 
 const FETCH_TIMEOUT_MS = 8000;
 
@@ -114,7 +115,7 @@ module.exports = {
         const baseUrl = storage.getDvBaseUrl();
         if (!baseUrl)
             return interaction.reply({
-                content: '❌ DV connection not configured. Ask staff to run `/setdvconnection`.',
+                content: '❌ DV connection not configured. Ask a staff member to set it up.',
                 flags: 64,
             });
 
@@ -124,7 +125,7 @@ module.exports = {
         try {
             // ── all / accepted ─────────────────────────────────────────────────
             if (filter === 'all' || filter === 'accepted') {
-                const res = await fetch(`${baseUrl}/jobs`, { timeout: FETCH_TIMEOUT_MS });
+                const res = await fetch(`${baseUrl}/jobs`, { headers: cfAccessHeaders(), timeout: FETCH_TIMEOUT_MS });
                 if (!res.ok)
                     return interaction.editReply('⚠️ DV returned an error fetching jobs. Is the game running?');
 
@@ -163,7 +164,7 @@ module.exports = {
 
             // ── assigned ───────────────────────────────────────────────────────
             } else {
-                const res = await fetch(`${baseUrl}/locos`, { timeout: FETCH_TIMEOUT_MS });
+                const res = await fetch(`${baseUrl}/locos`, { headers: cfAccessHeaders(), timeout: FETCH_TIMEOUT_MS });
                 if (!res.ok)
                     return interaction.editReply('⚠️ DV returned an error fetching loco data. Is the game running?');
 
