@@ -1,54 +1,31 @@
 // buttons/startop.js
-// "Start Operation" button on the dispatch embed.
-// Shows a session-type picker. Members may start an Unofficial session;
-// Official and Stress Test are shown only to admins, hosts, and dispatch.
+// "Start Operation" button on the dispatch embed. Confirms opening an official
+// ops session. Unofficial and stress test were retired in #39.
 
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { hasAnyRole } = require('../utils/permissions');
-const { ADMIN_ROLE, HOST_ROLE, MEMBER_ROLE } = require('../config');
+const { ADMIN_ROLE, HOST_ROLE } = require('../config');
 
 module.exports = {
     customId: 'startop_btn',
 
     async execute(interaction) {
-        const canOfficial = hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE]);
-        const canUnofficial = canOfficial || hasAnyRole(interaction.member, MEMBER_ROLE);
-
-        if (!canUnofficial) {
+        if (!hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE])) {
             return interaction.reply({
                 content: '❌ You do not have permission to start an operation.',
                 flags: 64,
             });
         }
 
-        const buttons = [
+        const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setCustomId('startop:unofficial')
-                .setLabel('Unofficial')
-                .setStyle(ButtonStyle.Secondary),
-        ];
-
-        if (canOfficial) {
-            buttons.unshift(
-                new ButtonBuilder()
-                    .setCustomId('startop:official')
-                    .setLabel('Official')
-                    .setStyle(ButtonStyle.Success),
-            );
-            buttons.push(
-                new ButtonBuilder()
-                    .setCustomId('startop:stress_test')
-                    .setLabel('Stress Test')
-                    .setStyle(ButtonStyle.Secondary),
-            );
-        }
-
-        const row = new ActionRowBuilder().addComponents(...buttons);
+                .setCustomId('startop:official')
+                .setLabel('Start Operation')
+                .setStyle(ButtonStyle.Success),
+        );
 
         return interaction.reply({
-            content: canOfficial
-                ? '**What type of session is this?**'
-                : '**Start an unofficial session?** Official and Stress Test need host or dispatch.',
+            content: '**Start an official ops session?**',
             components: [row],
             flags: 64,
         });

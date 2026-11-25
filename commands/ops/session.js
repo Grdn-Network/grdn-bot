@@ -22,7 +22,7 @@ const { cfAccessHeaders }                        = require('../../utils/hostConn
 const { sendLog }                                = require('../../logging/logHelper');
 const loggingConfig                              = require('../../config/logging.json');
 const {
-    ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE, DVMP_COMMAND_ROLE, MEMBER_ROLE,
+    ADMIN_ROLE, HOST_ROLE, DISPATCH_QUAL_ROLE, DVMP_COMMAND_ROLE,
     DISPATCH_CHANNEL_ID, TRAIN_BOARD_CHANNEL_ID, CREW_VC_CATEGORY_ID, OPS_CATEGORY_ID,
 } = require('../../config');
 const { requireCategory } = require('../../utils/commandChannel');
@@ -45,15 +45,6 @@ module.exports = {
                 { name: 'Jobs — list active Derail Valley jobs',       value: 'jobs'  },
                 { name: 'Board — force-refresh the Train Board',       value: 'board' },
                 { name: 'Embed — post or restore the ops embed',       value: 'embed' },
-            )
-        )
-        .addStringOption(opt => opt
-            .setName('session_type')
-            .setDescription('Type of session (only used with Start)')
-            .addChoices(
-                { name: 'Official',    value: 'official'    },
-                { name: 'Unofficial',  value: 'unofficial'  },
-                { name: 'Stress Test', value: 'stress_test' },
             )
         ),
 
@@ -78,14 +69,10 @@ module.exports = {
 // HANDLERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Who can open a given session type. Unofficial is open to any member; official
-// and stress test stay restricted to admins, hosts, and dispatch-qualified staff.
-// Hosts run sessions. Controller Qual (dispatch) does not. Members may open an
-// unofficial session; official and stress test stay with hosts and admins.
-function canStartSession(member, sessionType) {
-    if (sessionType === 'unofficial') {
-        return hasAnyRole(member, [MEMBER_ROLE, ADMIN_ROLE, HOST_ROLE]);
-    }
+// Who can open an ops session. Hosts and admins run sessions; Controller Qual
+// (dispatch) does not. Sessions are always official now: unofficial and stress
+// test were retired in #39.
+function canStartSession(member) {
     return hasAnyRole(member, [ADMIN_ROLE, HOST_ROLE]);
 }
 
@@ -167,13 +154,12 @@ async function syncEmbedFromMod(guild) {
     return { status: `✅ Session open — GRDNConnect at \`${connectUrl}\` returned status: ${gameStatus}.`, interchangeMode };
 }
 
-async function handleStart(interaction, typeOverride = null) {
-    const sessionType = typeOverride ?? interaction.options?.getString?.('session_type') ?? 'official';
+async function handleStart(interaction) {
+    const sessionType = 'official';
 
-    if (!canStartSession(interaction.member, sessionType)) {
-        const label = { official: 'official', stress_test: 'stress test', unofficial: 'unofficial' }[sessionType] ?? sessionType;
+    if (!canStartSession(interaction.member)) {
         return interaction.reply({
-            content: `❌ Only admins, hosts, and dispatch-qualified members can start ${label} sessions.`,
+            content: '❌ Only admins and hosts can start an ops session.',
             flags: 64,
         });
     }
@@ -274,7 +260,7 @@ async function handleStart(interaction, typeOverride = null) {
     //       console.log(`[Session] Interchange Mode active for session ${sessionId}`);
     //   }
 
-    const sessionTypeLabel = { official: 'Official', unofficial: 'Unofficial', stress_test: 'Stress Test' }[sessionType] ?? sessionType;
+    const sessionTypeLabel = 'Official';
 
     const logEmbed = new EmbedBuilder()
         .setTitle('🟢 Ops Session Opened')
@@ -318,8 +304,7 @@ async function handleEnd(interaction) {
     const activeSession = storage.getActiveSession(guild.id);
 
     // Who may end an op: staff and DVMP Command can end any op; the person who
-    // started the current op can end their own (so a member who opened an
-    // unofficial session can close it). Nobody else, to stop trolling.
+    // started the current op can end their own. Nobody else, to stop trolling.
     const isStaff   = hasAnyRole(interaction.member, [ADMIN_ROLE, HOST_ROLE, DVMP_COMMAND_ROLE]);
     const isStarter = !!activeSession && activeSession.started_by === interaction.user.id;
     if (!isStaff && !isStarter) {
