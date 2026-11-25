@@ -55,7 +55,7 @@ module.exports = {
                 },
                 {
                     name: 'MODS',
-                    value: 'Found in <#1477811143019069543>. For unofficial operations they may be posted in <#1498270262632910868> instead.',
+                    value: 'Found in <#1477811143019069543>.',
                 },
                 {
                     name: 'Comms',
