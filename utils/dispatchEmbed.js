@@ -25,13 +25,13 @@ function buildDispatchEmbed() {
 
     const opsActive = !!s.ops_active;
 
-    // Only official mods appear in the public embed.
+    // Only official mods appear in the public embed, split into category sections.
     const mods = db.prepare(
-        `SELECT name, url, version, note FROM mods WHERE official = 1 ORDER BY sort_order, id`
+        `SELECT name, url, version, note, category FROM mods WHERE official = 1 ORDER BY sort_order, id`
     ).all();
     const activePreset = db.prepare(`SELECT name FROM presets WHERE active = 1 LIMIT 1`).get();
-    const modsFieldName = activePreset ? `📦 Required Mods (${activePreset.name})` : '📦 Required Mods';
-    const modFields = buildModFields(mods, modsFieldName);
+    const presetSuffix = activePreset ? ` (${activePreset.name})` : '';
+    const modFields = buildModSections(mods, presetSuffix);
 
     return new EmbedBuilder()
         .setTitle('🚂 GRDN Operations')
@@ -65,6 +65,29 @@ function buildModFields(mods, baseName) {
         return [{ name: baseName, value: 'No mods configured. Use `/mod add` to add required mods.', inline: false }];
     }
     return chunkFields(mods.map(formatModLine), baseName);
+}
+
+// Splits a mod list into the three ops-embed sections by category:
+// Required, Client / Optional, Host Only. Empty sections are omitted, so with
+// everything defaulting to 'required' the embed looks exactly as it did before.
+// presetSuffix (e.g. " (Metro)") is appended to the Required header only.
+function buildModSections(mods, presetSuffix = '') {
+    const inCategory = (c) => mods.filter(m => (m.category || 'required') === c);
+
+    if (mods.length === 0) {
+        return buildModFields([], `📦 Required Mods${presetSuffix}`);
+    }
+
+    const sections = [
+        { cat: 'required', name: `📦 Required Mods${presetSuffix}` },
+        { cat: 'optional', name: '🧩 Client / Optional' },
+        { cat: 'host',     name: '🖥️ Host Only' },
+    ];
+
+    return sections.flatMap(({ cat, name }) => {
+        const group = inCategory(cat);
+        return group.length ? buildModFields(group, name) : [];
+    });
 }
 
 // Packs the given lines into a sequence of embed-field objects, each with a
@@ -132,4 +155,4 @@ function deriveDvConnectUrl(rdLink) {
     }
 }
 
-module.exports = { buildDispatchEmbed, buildModFields, buildDispatchComponents, deriveDvConnectUrl };
+module.exports = { buildDispatchEmbed, buildModFields, buildModSections, buildDispatchComponents, deriveDvConnectUrl };

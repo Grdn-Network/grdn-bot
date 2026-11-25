@@ -34,7 +34,9 @@ module.exports = {
         await refreshOpsEmbed(interaction);
 
         const verbDone = entry.payload.action === 'add' ? 'Added/updated'
-            : entry.payload.action === 'edit' ? 'Edited' : 'Removed';
+            : entry.payload.action === 'edit' ? 'Edited'
+            : entry.payload.action === 'category' ? 'Moved'
+            : 'Removed';
         let msg = buildModListReply(verbDone, entry.payload.name);
         if (active) msg += `\n\nPreset **${active.name}** was also updated.`;
 
