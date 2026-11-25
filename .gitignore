@@ -1,7 +1,10 @@
 node_modules/
 .env
 crash.log
-*.sqlite
+# Database and any copy of it (.bak, -journal, .old). Holds Discord and Steam IDs.
+*.sqlite*
+# Backups of anything else (.env.bak, host-tunnels.json.bak)
+*.bak
 *.sync-conflict-*
 *.bat
 host-tunnels.json
