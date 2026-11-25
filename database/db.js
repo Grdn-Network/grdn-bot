@@ -1,4 +1,5 @@
 const Database = require('better-sqlite3');
+const { isTunnelUrl } = require('../utils/hostConnect');
 const db = new Database('./database/users.sqlite');
 
 /* -----------------------------------------------------
@@ -207,6 +208,22 @@ db.prepare(`
     INSERT OR IGNORE INTO dv_settings (id, dv_host, dv_port, dv_url)
     VALUES (1, NULL, NULL, NULL)
 `).run();
+
+// Hosts are only reached through their Cloudflare tunnel now. Clear any raw IP
+// left over from the retired /setdvconnection so nothing can push to it.
+{
+    const row = db.prepare(`SELECT dv_host, dv_port, dv_url FROM dv_settings WHERE id = 1`).get();
+    const urlOk = !row.dv_url || isTunnelUrl(row.dv_url.replace(/\/$/, ''));
+    if (row.dv_host || row.dv_port || !urlOk) {
+        db.prepare(`
+            UPDATE dv_settings
+            SET dv_host = NULL, dv_port = NULL,
+                dv_url  = CASE WHEN ? THEN dv_url ELSE NULL END
+            WHERE id = 1
+        `).run(urlOk ? 1 : 0);
+        console.warn('[DV] Cleared a non-tunnel host URL. Hosts connect through their -connect tunnel.');
+    }
+}
 
 /* -----------------------------------------------------
    OPS / HOURS TRACKING

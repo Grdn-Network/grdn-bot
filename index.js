@@ -9,6 +9,7 @@ const { updateTrainBoard } = require('./utils/trainBoard');
 const { runRetention } = require('./utils/purgeForensics');
 const { sweepStaleSessions, SWEEP_INTERVAL_MS } = require('./utils/staleSessions');
 const sessionAuth = require('./utils/sessionAuth');
+const { cfAccessHeaders } = require('./utils/hostConnect');
 
 const CRASH_LOG_PATH = 'C:\\GRDN\\bot\\crash.log';
 fs.mkdirSync(path.dirname(CRASH_LOG_PATH), { recursive: true });
@@ -117,7 +118,7 @@ client.once('ready', () => {
 
                 fetch(`${dvUrl}/session-config`, {
                     method:  'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', ...cfAccessHeaders() },
                     body:    JSON.stringify({
                         botUrl:   process.env.BOT_PUBLIC_URL || '',
                         secret,

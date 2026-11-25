@@ -8,6 +8,7 @@ const storage = require('../../database/storage');
 const { classifyLeg } = require('../../utils/statsHelper');
 const { OPS_CHAT_CHANNEL_ID } = require('../../config');
 const { requireChannel } = require('../../utils/commandChannel');
+const { cfAccessHeaders } = require('../../utils/hostConnect');
 
 const FETCH_TIMEOUT_MS = 5000;
 
@@ -44,7 +45,7 @@ module.exports = {
         try {
             const response = await fetch(`${baseUrl}/complete-job`, {
                 method:  'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...cfAccessHeaders() },
                 body:    JSON.stringify({ jobId }),
                 timeout: FETCH_TIMEOUT_MS,
             });

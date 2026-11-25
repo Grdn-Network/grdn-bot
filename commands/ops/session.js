@@ -18,6 +18,7 @@ const { updateTrainBoard }                       = require('../../utils/trainBoa
 const { buildDispatchEmbed, buildDispatchComponents, deriveDvConnectUrl } = require('../../utils/dispatchEmbed');
 const { deleteAllCrewVCs }                       = require('../../utils/crewVCManager');
 const sessionAuth                                = require('../../utils/sessionAuth');
+const { cfAccessHeaders }                        = require('../../utils/hostConnect');
 const { sendLog }                                = require('../../logging/logHelper');
 const loggingConfig                              = require('../../config/logging.json');
 const {
@@ -101,7 +102,7 @@ async function syncEmbedFromMod(guild) {
 
     // Step 2 — resolve the GRDNConnect URL.
     // Prefer a Remote Dispatch link (e.g. grdn.grdnnetwork.com → grdn-connect.grdnnetwork.com).
-    // If none is set or it can't be derived, fall back to the direct IP from config.
+    // If none is set or it can't be derived, fall back to the stored tunnel URL.
     const stored  = db.prepare(`SELECT remote_link FROM dispatch_settings WHERE id = 1`).get();
     const rdLink  = stored?.remote_link;
     const derived = (rdLink && rdLink !== 'Not set') ? deriveDvConnectUrl(rdLink) : null;
@@ -116,7 +117,7 @@ async function syncEmbedFromMod(guild) {
     if (!connectUrl) {
         gameStatus = 'no_url';
     } else try {
-        const res = await fetch(`${connectUrl}/server-info`, { timeout: FETCH_TIMEOUT_MS });
+        const res = await fetch(`${connectUrl}/server-info`, { headers: cfAccessHeaders(), timeout: FETCH_TIMEOUT_MS });
         if (res.ok) {
             const data = await res.json();
             serverName      = data.serverName;
@@ -160,7 +161,7 @@ async function syncEmbedFromMod(guild) {
 
     if (serverName) return { status: `✅ Embed updated — **${serverName}** | ${rdLink || connectUrl}`, interchangeMode };
     if (gameStatus === 'no_url')
-        return { status: `✅ Session open — no host connection configured. Run \`/setdvconnection\` with your mod URL, or set Server Name and Password manually with \`/editembed\`.`, interchangeMode };
+        return { status: `✅ Session open, but no host tunnel URL could be resolved. Set Server Name and Password manually with \`/editembed\`.`, interchangeMode };
     if (gameStatus === 'unreachable')
         return { status: `✅ Session open — game not reachable yet. Use \`/editembed\` to set Server Name and Password manually.`, interchangeMode };
     return { status: `✅ Session open — GRDNConnect at \`${connectUrl}\` returned status: ${gameStatus}.`, interchangeMode };
@@ -187,47 +188,45 @@ async function handleStart(interaction, typeOverride = null) {
         });
     }
 
-    await interaction.deferReply({ flags: 64 });
-    const now = Date.now();
-    const sessionId = storage.openSession(interaction.guild.id, interaction.user.id, now, sessionType);
-
     // ── Resolve the clicker's Cloudflare tunnel ───────────────────────────────
     // Whoever clicks Start Op IS the host for this session — their tunnel is used.
     // host-tunnels.json: { "discordUserId": "tunnelName", ... }
     // "red" → Remote Dispatch: https://red.grdnnetwork.com
     //       → GRDNConnect:     https://red-connect.grdnnetwork.com
-    let connectUrl = null;
+    // Checked before the session opens. A host with no tunnel is told to get one
+    // instead of getting a session the bot can't reach (or that pushes this
+    // session's token to the previous host).
+    let tunnelName;
     try {
         const tunnelsPath = path.join(__dirname, '../../host-tunnels.json');
-        const hostTunnels = JSON.parse(fs.readFileSync(tunnelsPath, 'utf8'));
-        const tunnelName  = hostTunnels[interaction.user.id];
-
-        if (tunnelName) {
-            // Official host with a Cloudflare tunnel
-            const rdLink = `https://${tunnelName}.grdnnetwork.com`;
-            db.prepare(`
-                INSERT OR IGNORE INTO dispatch_settings
-                    (id, server_name, server_password, remote_link, remote_password)
-                VALUES (1, 'Not set', 'Not set', 'Not set', 'GRDN')
-            `).run();
-            db.prepare(`UPDATE dispatch_settings SET remote_link = ? WHERE id = 1`).run(rdLink);
-            connectUrl = deriveDvConnectUrl(rdLink);
-            console.log(`[Session] ${interaction.user.tag} → tunnel "${tunnelName}" → ${connectUrl}`);
-        } else {
-            // Not in host-tunnels — fall back to URL set via /setdvconnection
-            connectUrl = storage.getDvBaseUrl();
-            if (!connectUrl) {
-                console.log(`[Session] ${interaction.user.tag} → no DV URL configured, session opening without game connection`);
-            } else {
-                console.log(`[Session] ${interaction.user.tag} → using pre-set URL: ${connectUrl}`);
-            }
-        }
+        tunnelName = JSON.parse(fs.readFileSync(tunnelsPath, 'utf8'))[interaction.user.id];
     } catch (err) {
-        return interaction.editReply(`❌ Could not read \`host-tunnels.json\`: ${err.message}`);
+        return interaction.reply({ content: `❌ Could not read \`host-tunnels.json\`: ${err.message}`, flags: 64 });
+    }
+    if (!tunnelName) {
+        console.log(`[Session] ${interaction.user.tag} → not in host-tunnels.json, start refused`);
+        return interaction.reply({
+            content: `❌ You don't have a host tunnel yet, so the bot can't reach your game. Ask <@&${DVMP_COMMAND_ROLE}> to set up your \`-connect\` tunnel, then start the op again.`,
+            flags: 64,
+            allowedMentions: { parse: [] },
+        });
     }
 
+    await interaction.deferReply({ flags: 64 });
+    const now = Date.now();
+    const sessionId = storage.openSession(interaction.guild.id, interaction.user.id, now, sessionType);
+
+    const rdLink = `https://${tunnelName}.grdnnetwork.com`;
+    db.prepare(`
+        INSERT OR IGNORE INTO dispatch_settings
+            (id, server_name, server_password, remote_link, remote_password)
+        VALUES (1, 'Not set', 'Not set', 'Not set', 'GRDN')
+    `).run();
+    db.prepare(`UPDATE dispatch_settings SET remote_link = ? WHERE id = 1`).run(rdLink);
+    const connectUrl = deriveDvConnectUrl(rdLink);
+    console.log(`[Session] ${interaction.user.tag} → tunnel "${tunnelName}" → ${connectUrl}`);
+
     // ── Push bot URL, secret, and live crew channels to GRDNConnect ──────────
-    // Uses the tunnel URL if resolved above, direct IP if not.
     // Fire-and-forget — don't let game-unreachable block the Discord response.
     const botPublicUrl  = process.env.BOT_PUBLIC_URL || '';
     // Mint a fresh per-session token instead of reusing the global secret.
@@ -238,10 +237,10 @@ async function handleStart(interaction, typeOverride = null) {
         .sort((a, b) => a.rawPosition - b.rawPosition)
         .map(ch => ({ name: ch.name, vcId: ch.id }));
 
-    if (botPublicUrl) {
+    if (botPublicUrl && connectUrl) {
         fetch(`${connectUrl}/session-config`, {
             method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...cfAccessHeaders() },
             body:    JSON.stringify({ botUrl: botPublicUrl, secret: botSecret, channels: crewChannels }),
             timeout: 3000,
         }).then(r => {
@@ -438,7 +437,7 @@ async function handleJobs(interaction) {
     await interaction.deferReply();
 
     try {
-        const response = await fetch(`${baseUrl}/jobs`, { timeout: FETCH_TIMEOUT_MS });
+        const response = await fetch(`${baseUrl}/jobs`, { headers: cfAccessHeaders(), timeout: FETCH_TIMEOUT_MS });
         if (!response.ok)
             return interaction.editReply('⚠️ The Derail Valley mod responded with an error.');
 
