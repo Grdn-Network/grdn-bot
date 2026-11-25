@@ -79,4 +79,12 @@ module.exports = {
     MEMBER_ROLE: '1474628279213228204',
     MEMBER_AUTOSTRIP: false,
 
+    // ── Mod auto-sync (BETA) ────────────────────────────────────────────────
+    // When on, GRDNConnect can POST the host's scanned mod list to /mod-sync,
+    // which fills the "Auto Sync" preset (categorized). Off by default so the
+    // whole beta is a no-op until deliberately enabled. Roll back = set false.
+    MOD_SYNC_BETA: false,
+    // Name of the preset the scan writes into. Inspect it with /viewmods.
+    SYNC_PRESET_NAME: 'Auto Sync',
+
 };
