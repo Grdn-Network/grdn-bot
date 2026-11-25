@@ -7,8 +7,8 @@
 // secret is ever compiled into the distributed mod.
 //
 // In-memory by design: tokens live only for the running process. A bot restart
-// mid-session drops the token, and auth falls back to HTTP_SECRET (see server.js)
-// until the next /session start re-mints one. Fine for ops-length sessions.
+// mid-session drops the token; the 90s channel push in index.js mints a new one
+// and sends it to the host. Fine for ops-length sessions.
 const crypto = require('crypto');
 
 // Only one ops session runs at a time per server, so a single active token is enough.
@@ -27,9 +27,15 @@ function isValid(token) {
     return typeof token === 'string' && token.length > 0 && activeTokens.has(token);
 }
 
+// The live session token, or null if there is none (no session, or the bot restarted).
+function currentToken() {
+    const [token] = activeTokens;
+    return token ?? null;
+}
+
 // Drop all tokens. Call on session end.
 function clear() {
     activeTokens.clear();
 }
 
-module.exports = { mintToken, isValid, clear };
+module.exports = { mintToken, isValid, currentToken, clear };

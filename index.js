@@ -8,6 +8,7 @@ const storage = require('./database/storage');
 const { updateTrainBoard } = require('./utils/trainBoard');
 const { runRetention } = require('./utils/purgeForensics');
 const { sweepStaleSessions, SWEEP_INTERVAL_MS } = require('./utils/staleSessions');
+const sessionAuth = require('./utils/sessionAuth');
 
 const CRASH_LOG_PATH = 'C:\\GRDN\\bot\\crash.log';
 fs.mkdirSync(path.dirname(CRASH_LOG_PATH), { recursive: true });
@@ -109,12 +110,17 @@ client.once('ready', () => {
                     .sort((a, b) => a.rawPosition - b.rawPosition)
                     .map(ch => ({ name: ch.name, vcId: ch.id }));
 
+                // Re-send the live session token, never HTTP_SECRET: Connect relays this
+                // value to every client and serves it from its public /client-config.
+                // No token during an active session means the bot restarted, so mint one.
+                const secret = sessionAuth.currentToken() ?? sessionAuth.mintToken();
+
                 fetch(`${dvUrl}/session-config`, {
                     method:  'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body:    JSON.stringify({
                         botUrl:   process.env.BOT_PUBLIC_URL || '',
-                        secret:   process.env.HTTP_SECRET    || '',
+                        secret,
                         channels,
                     }),
                     timeout: 3000,
