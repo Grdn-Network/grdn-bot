@@ -381,22 +381,17 @@ module.exports = function startServer(client) {
             }
 
             try {
-                // LIMIT 1 via rowid subquery — for multi-crew trains, only the most recently
-                // registered person is moved. Avoids clobbering both registrations when one
-                // of a two-person crew switches locos mid-op.
-                const result = db.prepare(`
-                    UPDATE registrations
-                    SET train_number = ?,
-                        loco_type    = CASE WHEN ? IS NOT NULL THEN ? ELSE loco_type END
-                    WHERE rowid IN (
-                        SELECT rowid FROM registrations
-                        WHERE train_number = ? AND active = 1
-                        ORDER BY rowid DESC
-                        LIMIT 1
-                    )
-                `).run(toTrainNumber, locoType ?? null, locoType ?? null, fromTrainNumber);
+                // For multi-crew trains, only the most recently registered person on
+                // fromTrainNumber is moved. Pin that user first so updatedRow is the
+                // player who moved, not whoever registered last on toTrainNumber.
+                const target = db.prepare(`
+                    SELECT user_id FROM registrations
+                    WHERE train_number = ? AND active = 1
+                    ORDER BY rowid DESC
+                    LIMIT 1
+                `).get(fromTrainNumber);
 
-                if (result.changes === 0) {
+                if (!target) {
                     if (steamId) {
                         return res.json({ ok: true, updated: 0, note: 'Steam ID not linked yet' });
                     }
@@ -404,12 +399,17 @@ module.exports = function startServer(client) {
                     return res.status(404).json({ ok: false, error: 'No crew found for fromTrainNumber' });
                 }
 
+                db.prepare(`
+                    UPDATE registrations
+                    SET train_number = ?,
+                        loco_type    = CASE WHEN ? IS NOT NULL THEN ? ELSE loco_type END
+                    WHERE user_id = ? AND active = 1
+                `).run(toTrainNumber, locoType ?? null, locoType ?? null, target.user_id);
+
                 updatedRow = db.prepare(`
                     SELECT user_id, type, train_number, loco_type, preferred_name
-                    FROM registrations
-                    WHERE train_number = ? AND active = 1
-                    ORDER BY rowid DESC LIMIT 1
-                `).get(toTrainNumber);
+                    FROM registrations WHERE user_id = ? AND active = 1
+                `).get(target.user_id);
 
             } catch (err) {
                 console.error('[CrewUpdate] Error:', err.message);
@@ -443,6 +443,9 @@ module.exports = function startServer(client) {
 
         // ── Post-response: sync nickname, crew VC name, enroll in hours, and train board ─
         // These run after the HTTP response is sent — failures are non-fatal.
+        // Every crew member on toTrainNumber is visited so their crew VC picks up the
+        // train number, but only the player whose row changed (updatedRow) is renamed
+        // and enrolled.
         try {
             for (const [, guild] of client.guilds.cache) {
                 const crew = storage.getAllCrew(guild.id)
@@ -452,8 +455,10 @@ module.exports = function startServer(client) {
                     const member = await guild.members.fetch(c.userId).catch(() => null);
                     if (!member) continue;
 
+                    const isChanger = !!updatedRow && c.userId === updatedRow.user_id;
+
                     // Sync Discord nickname
-                    if (updatedRow) {
+                    if (isChanger) {
                         const nick = buildNickname(
                             updatedRow.type,
                             updatedRow.train_number,
@@ -475,14 +480,16 @@ module.exports = function startServer(client) {
                     // Enroll in session hour tracking — mirrors enrollIfSessionActive in setcrew.js.
                     // Without this, players who registered via the in-game radio instead of /setcrew
                     // were never added to session_crew and never had their hours clock started.
+                    // Changer only: crewmates opted in through their own /setcrew or radio
+                    // update, and member.voice must be the changer's, not a crewmate's.
                     const activeSession = storage.getActiveSession(guild.id);
-                    if (activeSession && updatedRow) {
-                        const category = storage.classifyCategory(updatedRow.type, updatedRow.train_number);
+                    if (activeSession && isChanger) {
+                        const category = storage.classifyCategory(c.type, c.trainNumber);
                         if (category) {
-                            storage.addToSessionCrew(activeSession.id, updatedRow.user_id);
+                            storage.addToSessionCrew(activeSession.id, c.userId);
                             // Only official ops and stress tests accrue hours.
                             if (member.voice?.channel && storage.sessionTracksHours(activeSession)) {
-                                storage.openOpsEntry(updatedRow.user_id, guild.id, activeSession.id, category, Date.now());
+                                storage.openOpsEntry(c.userId, guild.id, activeSession.id, category, Date.now());
                             }
                         }
                     }
