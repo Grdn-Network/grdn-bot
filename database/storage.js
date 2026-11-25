@@ -155,6 +155,21 @@ db.prepare(`
     )
 `).run();
 
+// One Steam link per Discord account. If old duplicates exist, log them and skip
+// the index so a bad row can't stop the bot from starting. Clean them up by hand
+// and restart to enforce it.
+const dupSteamLinks = db.prepare(`
+    SELECT discord_id, GROUP_CONCAT(steam_id, ', ') AS steam_ids
+    FROM steam_links GROUP BY discord_id HAVING COUNT(*) > 1
+`).all();
+if (dupSteamLinks.length) {
+    for (const d of dupSteamLinks)
+        console.warn(`[SteamLink] Discord ${d.discord_id} has more than one Steam link: ${d.steam_ids}`);
+    console.warn('[SteamLink] One-link-per-account index NOT applied until these are fixed.');
+} else {
+    db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_steam_links_discord ON steam_links (discord_id)`).run();
+}
+
 // Assignments table (train → assignment info)
 db.prepare(`
     CREATE TABLE IF NOT EXISTS assignments (
