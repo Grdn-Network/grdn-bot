@@ -13,7 +13,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder } = require('discord.js');
 const storage        = require('../database/storage');
 const { buildNickname }   = require('../utils/nickname');
 const { updateTrainBoard } = require('../utils/trainBoard');
-const { TRAIN_BOARD_CHANNEL_ID } = require('../config');
+const { TRAIN_BOARD_CHANNEL_ID, DVMP_COMMAND_ROLE } = require('../config');
 
 module.exports = {
     // Dynamic custom ID — matched by prefix, not exact string
@@ -45,6 +45,19 @@ module.exports = {
             return interaction.reply({
                 content: '❌ This Steam account is already linked to a different Discord user. Ask an admin if this is wrong.',
                 flags: 64,
+            });
+        }
+
+        // ── Clicker already linked to a different Steam ID ───────────────────
+        // One Steam link per Discord account. Drop the new link so the prompt
+        // stays open for its real owner.
+        const ownLink = storage.getSteamLinkByDiscord(discordId);
+        if (ownLink) {
+            console.warn(`[SteamLink] Rejected Steam ${steamId} for ${interaction.user.username} (${discordId}): already linked to Steam ${ownLink.steamId}`);
+            return interaction.reply({
+                content: `❌ Your Discord is already linked to a different Steam account. Contact <@&${DVMP_COMMAND_ROLE}> if this is wrong.`,
+                flags: 64,
+                allowedMentions: { parse: [] },
             });
         }
 
