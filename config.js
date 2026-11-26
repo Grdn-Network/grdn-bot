@@ -71,8 +71,9 @@ module.exports = {
     SCAM_BURST_WINDOW_MS: 60 * 1000,
     SCAM_BURST_THRESHOLD: 2,
 
-    // "Member" role. Used for permission gates (e.g. editing the Shared Preset).
-    // Note: some old invite links wrongly grant this alongside NEWCOMER;
+    // "Member" role, earned after a first op. Not currently used by any
+    // permission gate (preset editing is staff-only, see #10). Kept as a known
+    // role ID. Some old invite links wrongly grant it alongside NEWCOMER, and
     // MEMBER_AUTOSTRIP can strip it from newcomers (still off for now).
     MEMBER_ROLE: '1474628279213228204',
     MEMBER_AUTOSTRIP: false,
