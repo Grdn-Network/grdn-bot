@@ -6,9 +6,9 @@ Traffic goes both ways. The host's game calls the bot for radio switches, crew u
 
 Every request from the game carries an `x-secret` header.
 
-When a host clicks Start Op, the bot mints a random token for that op and sends it to the host's game with `POST /session-config`. The host's mod hands it to every client over the Multiplayer connection. Nobody types a secret into UMM settings.
+When a host clicks Start Op, the bot mints two random tokens for that op and sends them to the host's game with `POST /session-config`: a **host token** that opens every endpoint and stays on the host, and a **client token** scoped to a small route allowlist. Clients hold no bot credential of their own. Player actions relay through the host over the Multiplayer connection, and the host calls the bot with its host token. Nobody types a secret into UMM settings.
 
-The token dies when the op ends. If the bot restarts mid-op, the 90 second channel push mints a new one and sends it to the host, so things recover by themselves.
+The tokens die when the op ends. The bot pushes `/session-config` whenever the relevant state changes (session start, crew voice channels) and on a periodic reconcile about every 10 minutes, so a host that restarted mid-op and lost its tokens gets a fresh pair without anyone noticing.
 
 ## HTTP_SECRET
 
