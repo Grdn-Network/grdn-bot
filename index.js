@@ -61,6 +61,11 @@ const TRAIN_BOARD_POLL_MS = 30_000;
 // the config it was holding.
 const SESSION_CONFIG_RECONCILE_MS = 600_000;
 
+// Guilds whose reconcile push is currently failing and have already been alerted,
+// so the 10-minute retry warns the log channel once per failure streak instead of
+// every tick. Cleared when that guild's host accepts a push again.
+const configPushFailingGuilds = new Set();
+
 client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}`);
 
@@ -101,14 +106,58 @@ client.once('ready', () => {
     setInterval(async () => {
         for (const [, guild] of client.guilds.cache) {
             try {
-                if (!storage.getActiveSession(guild.id)) continue;
-                await pushSessionConfig(guild, { force: true, reason: 'reconcile' });
+                if (!storage.getActiveSession(guild.id)) {
+                    // No active session: clear any stale failing-state so a later
+                    // session for this guild starts fresh and its first failure alerts.
+                    configPushFailingGuilds.delete(guild.id);
+                    continue;
+                }
+                const result = await pushSessionConfig(guild, { force: true, reason: 'reconcile' });
+                if (result && !result.pushed) {
+                    // A forced reconcile that did not land means the host is refusing
+                    // or unreachable. Warn the log channel once, then stay quiet until
+                    // it recovers, so a stuck host is one alert and not six an hour.
+                    if (!configPushFailingGuilds.has(guild.id)) {
+                        configPushFailingGuilds.add(guild.id);
+                        await postConfigPushAlert(client, guild, result);
+                    }
+                } else {
+                    configPushFailingGuilds.delete(guild.id);
+                }
             } catch (err) {
                 console.error('[SessionConfig] reconcile', guild.id, err.message);
             }
         }
     }, SESSION_CONFIG_RECONCILE_MS);
 });
+
+// Posts one alert to the ops log channel when a host's session-config push starts
+// failing, so a silent reconcile 403 loop does not hide dead radio and voice. The
+// reconcile caller dedupes: this fires once per failure streak and resets when the
+// host accepts a push again. Identifies the host by guild name only, never a URL.
+async function postConfigPushAlert(client, guild, result) {
+    const channel = client.channels.cache.get(CRASH_LOG_CHANNEL_ID);
+    if (!channel) return;
+    let why;
+    let hint = '';
+    if (result.status === 403) {
+        why = 'the host returned 403';
+        hint = ' Check the host\'s connect.cfg bot URL and the bot\'s BOT_PUBLIC_URL; if every host is failing, check the Cloudflare Access service token.';
+    } else if (result.status) {
+        why = `the host rejected the push (HTTP ${result.status})`;
+    } else if (result.error) {
+        why = 'the host could not be reached';
+    } else if (result.skipped === 'BOT_PUBLIC_URL unset') {
+        why = 'the bot\'s public URL is not configured';
+    } else {
+        why = `the push did not go through (${result.skipped || 'unknown'})`;
+    }
+    await channel.send(
+        `⚠️ **${guild.name}**: the ops session-config push is failing because ${why}. ` +
+        'Radio and voice switching are down for that session until it is fixed.' + hint + ' ' +
+        'This warns once until the host accepts a push again.'
+    ).catch(() => {});
+}
 
 // ── Crew channel changes push immediately ─────────────────────────────────────
 // Covered by the Guilds intent. The push is skipped when the resulting channel

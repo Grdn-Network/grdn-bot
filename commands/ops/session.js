@@ -214,12 +214,20 @@ async function handleStart(interaction) {
     console.log(`[Session] ${interaction.user.tag} → tunnel "${tunnelName}" → ${connectUrl}`);
 
     // ── Push bot URL, tokens and live crew channels to GRDNConnect ───────────
-    // Fire-and-forget: don't let an unreachable game block the Discord response.
     // A fresh token pair is minted here, so this push is unconditional. The host
     // keeps the host token and relays the client token to its clients.
-    pushSessionConfig(interaction.guild, { mint: true, reason: 'session start' });
-
-    const { status: embedStatus } = await syncEmbedFromMod(interaction.guild);
+    //
+    // Run the push and the embed sync concurrently so their host round-trips do not
+    // stack against the deferReply, then surface a failed push below. The push used
+    // to be fire-and-forget, so a refused or unreachable push left /session start
+    // reporting success while radio and voice were silently dead. The push resolver
+    // reports failure in its result rather than rejecting, but guard it anyway so a
+    // thrown push cannot turn a started session into a command error.
+    const [pushResult, { status: embedStatus }] = await Promise.all([
+        pushSessionConfig(interaction.guild, { mint: true, reason: 'session start' })
+            .catch(err => ({ pushed: false, error: err.message })),
+        syncEmbedFromMod(interaction.guild),
+    ]);
 
     // Interchange Mode — SHELVED. We are not running interchange ops for now, and
     // the mod now always reports interchangeMode false.
@@ -269,8 +277,28 @@ async function handleStart(interaction) {
         content:
             `✅ ${sessionTypeLabel} ops session open.\n` +
             `• Crew: run **/setcrew** with your **train number** to join\n` +
-            `• Dispatch embed: ${embedStatus}`,
+            `• Dispatch embed: ${embedStatus}` +
+            pushWarning(pushResult),
     });
+}
+
+// Turns a failed session-config push into a line appended to the /session start
+// reply, so a refused or unreachable host is visible to whoever opened the session
+// instead of only in the VPS console. Returns '' on success. Carries no token or
+// URL value, only field names, so it is safe to show in Discord.
+function pushWarning(result) {
+    if (!result || result.pushed) return '';
+    if (result.status === 403)
+        return '\n\n⚠️ The host refused the config (403). Check the host\'s connect.cfg bot URL and the bot\'s BOT_PUBLIC_URL; if every host shows this, check the Cloudflare Access service token. Fix it, then rerun **/session start**.';
+    if (result.status)
+        return `\n\n⚠️ The host rejected the config push (HTTP ${result.status}). Radio and voice switching will not work until it is resolved, then rerun **/session start**.`;
+    if (result.error)
+        return '\n\n⚠️ The host could not be reached to receive its config. Radio and voice switching will not work until the host is online, then rerun **/session start**.';
+    if (result.skipped === 'BOT_PUBLIC_URL unset')
+        return '\n\n⚠️ The bot\'s public URL is not configured, so the host was not sent its config. Ask an admin to set BOT_PUBLIC_URL on the bot host.';
+    if (result.skipped)
+        return `\n\n⚠️ The host was not sent its config (${result.skipped}). Radio and voice switching may not work.`;
+    return '';
 }
 
 // ── end ───────────────────────────────────────────────────────────────────────
