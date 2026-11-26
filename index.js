@@ -141,12 +141,12 @@ async function postConfigPushAlert(client, guild, result) {
     let why;
     let hint = '';
     if (result.status === 403) {
-        why = 'it returned 403';
+        why = 'the host returned 403';
         hint = ' Check the host\'s connect.cfg bot URL and the bot\'s BOT_PUBLIC_URL; if every host is failing, check the Cloudflare Access service token.';
     } else if (result.status) {
-        why = `it rejected the push (HTTP ${result.status})`;
+        why = `the host rejected the push (HTTP ${result.status})`;
     } else if (result.error) {
-        why = 'it could not be reached';
+        why = 'the host could not be reached';
     } else if (result.skipped === 'BOT_PUBLIC_URL unset') {
         why = 'the bot\'s public URL is not configured';
     } else {
