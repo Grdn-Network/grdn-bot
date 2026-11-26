@@ -8,6 +8,8 @@ Every request from the game carries an `x-secret` header.
 
 When a host clicks Start Op, the bot mints a random token for that op and sends it to the host's game with `POST /session-config`. The host's mod hands it to every client over the Multiplayer connection. Nobody types a secret into UMM settings.
 
+> Build note: the Multiplayer handoff above describes `main`. The 0.92.1 build has no packet channel, so its clients instead fetch the token over HTTP from the host's `GET /client-config`, which returns it as `_sessionBotSecret`. Either way the client ends up holding the session token and sends it as `x-secret`.
+
 The token dies when the op ends. If the bot restarts mid-op, the 90 second channel push mints a new one and sends it to the host, so things recover by themselves.
 
 ## HTTP_SECRET
