@@ -4,6 +4,7 @@
 //
 // Environment variables:
 //   HTTP_PORT   — port to listen on (default: 3000)
+//   HTTP_BIND   — interface to bind (default: 127.0.0.1, loopback only)
 //   HTTP_SECRET — legacy global secret, accepted as host-level during migration
 //
 // Auth: every request carries x-secret, which is one of the two tokens minted for
@@ -537,7 +538,13 @@ module.exports = function startServer(client) {
     // ── Health check ──────────────────────────────────────────────────────────
     app.get('/ping', (req, res) => res.json({ ok: true }));
 
-    app.listen(PORT, () => {
-        console.log(`[HTTP] Bot server listening on port ${PORT}`);
+    // Bind to loopback only. cloudflared runs on this machine and reaches the
+    // server at http://localhost:3000, so nothing legitimate needs an external
+    // interface. Without the explicit host, Node binds 0.0.0.0 and the VPS's
+    // public IP answers on this port directly, which skips Cloudflare entirely:
+    // no WAF, no rate limiting, no Access. Set HTTP_BIND to override.
+    const BIND = process.env.HTTP_BIND || '127.0.0.1';
+    app.listen(PORT, BIND, () => {
+        console.log(`[HTTP] Bot server listening on ${BIND}:${PORT}`);
     });
 };
