@@ -289,7 +289,7 @@ async function handleStart(interaction) {
 function pushWarning(result) {
     if (!result || result.pushed) return '';
     if (result.status === 403)
-        return '\n\n⚠️ The host refused this bot\'s config (403). Radio and voice switching will not work until the host\'s connect.cfg bot URL is corrected, then rerun **/session start**.';
+        return '\n\n⚠️ The host refused the config (403). Check the host\'s connect.cfg bot URL and the bot\'s BOT_PUBLIC_URL; if every host shows this, check the Cloudflare Access service token. Fix it, then rerun **/session start**.';
     if (result.status)
         return `\n\n⚠️ The host rejected the config push (HTTP ${result.status}). Radio and voice switching will not work until it is resolved, then rerun **/session start**.`;
     if (result.error)

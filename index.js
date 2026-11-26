@@ -106,7 +106,12 @@ client.once('ready', () => {
     setInterval(async () => {
         for (const [, guild] of client.guilds.cache) {
             try {
-                if (!storage.getActiveSession(guild.id)) continue;
+                if (!storage.getActiveSession(guild.id)) {
+                    // No active session: clear any stale failing-state so a later
+                    // session for this guild starts fresh and its first failure alerts.
+                    configPushFailingGuilds.delete(guild.id);
+                    continue;
+                }
                 const result = await pushSessionConfig(guild, { force: true, reason: 'reconcile' });
                 if (result && !result.pushed) {
                     // A forced reconcile that did not land means the host is refusing
@@ -134,14 +139,22 @@ async function postConfigPushAlert(client, guild, result) {
     const channel = client.channels.cache.get(CRASH_LOG_CHANNEL_ID);
     if (!channel) return;
     let why;
-    if (result.status === 403) why = 'the host refused this bot\'s address (403)';
-    else if (result.status)    why = `the host rejected the push (HTTP ${result.status})`;
-    else if (result.error)     why = 'the host could not be reached';
-    else if (result.skipped === 'BOT_PUBLIC_URL unset') why = 'the bot\'s public URL is not configured';
-    else                       why = `the push did not go through (${result.skipped || 'unknown'})`;
+    let hint = '';
+    if (result.status === 403) {
+        why = 'it returned 403';
+        hint = ' Check the host\'s connect.cfg bot URL and the bot\'s BOT_PUBLIC_URL; if every host is failing, check the Cloudflare Access service token.';
+    } else if (result.status) {
+        why = `it rejected the push (HTTP ${result.status})`;
+    } else if (result.error) {
+        why = 'it could not be reached';
+    } else if (result.skipped === 'BOT_PUBLIC_URL unset') {
+        why = 'the bot\'s public URL is not configured';
+    } else {
+        why = `the push did not go through (${result.skipped || 'unknown'})`;
+    }
     await channel.send(
         `⚠️ **${guild.name}**: the ops session-config push is failing because ${why}. ` +
-        'Radio and voice switching are down for that session until it is fixed. ' +
+        'Radio and voice switching are down for that session until it is fixed.' + hint + ' ' +
         'This warns once until the host accepts a push again.'
     ).catch(() => {});
 }
