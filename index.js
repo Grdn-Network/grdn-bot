@@ -66,7 +66,7 @@ const SESSION_CONFIG_RECONCILE_MS = 600_000;
 // every tick. Cleared when that guild's host accepts a push again.
 const configPushFailingGuilds = new Set();
 
-client.once('ready', () => {
+client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}`);
 
     // If no session is active in the DB, make sure ops_active is 0.
@@ -100,6 +100,23 @@ client.once('ready', () => {
             }
         }
     }, TRAIN_BOARD_POLL_MS);
+
+    // One-time recovery right after startup, before the reconcile interval's first
+    // tick. The minted token pair lives only in memory (utils/sessionAuth.js), so a
+    // restart mid-session leaves every host holding a token this process no longer
+    // knows, and stats, radio and crew voice all reject until the config is pushed
+    // again. Waiting for the interval would keep the session dark for up to
+    // SESSION_CONFIG_RECONCILE_MS. pushSessionConfig mints a fresh pair when the live
+    // one is empty, so this needs no token logic of its own. Best effort: a host
+    // whose game is down recovers on the next reconcile tick instead.
+    for (const [, guild] of client.guilds.cache) {
+        try {
+            if (!storage.getActiveSession(guild.id)) continue;
+            await pushSessionConfig(guild, { force: true, reason: 'startup' });
+        } catch (err) {
+            console.error('[SessionConfig] startup', guild.id, err.message);
+        }
+    }
 
     // Safety net only. Forced, because the point is a host that restarted and is
     // holding nothing, which no fingerprint comparison can detect.
