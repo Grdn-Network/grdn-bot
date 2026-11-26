@@ -80,9 +80,11 @@ module.exports = {
 
     // ── Mod auto-sync (BETA) ────────────────────────────────────────────────
     // When on, GRDNConnect can POST the host's scanned mod list to /mod-sync,
-    // which fills the "Auto Sync" preset (categorized). Off by default so the
-    // whole beta is a no-op until deliberately enabled. Roll back = set false.
-    MOD_SYNC_BETA: false,
+    // which fills the "Auto Sync" preset (categorized). Off unless MOD_SYNC_BETA=true
+    // is set in .env, so the whole beta is a no-op until deliberately enabled and
+    // toggling it needs no edit to this tracked file. Roll back = remove that .env
+    // line (or set it to anything but true) and restart.
+    MOD_SYNC_BETA: process.env.MOD_SYNC_BETA === 'true',
     // Name of the preset the scan writes into. Inspect it with /viewmods.
     SYNC_PRESET_NAME: 'Auto Sync',
 

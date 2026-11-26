@@ -22,7 +22,7 @@ module.exports = {
         }
         if (!MOD_SYNC_BETA) {
             return interaction.reply({
-                content: '❌ Mod auto-sync beta is off. Set `MOD_SYNC_BETA: true` in config and restart to test.',
+                content: '❌ Mod auto-sync beta is off. Set `MOD_SYNC_BETA=true` in .env and restart to test.',
                 flags: 64,
             });
         }
