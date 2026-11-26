@@ -17,6 +17,12 @@ module.exports = {
 
         const [action, arg] = interaction.customId.split(':');
 
+        // DVMP Command can triage scam alerts (reinstate / dismiss) but not
+        // execute a purge + ban. That stays admin-only. See #15.
+        if (action === 'scam_purge' && !hasAnyRole(interaction.member, [ADMIN_ROLE])) {
+            return interaction.reply({ content: '❌ Only admins can purge and ban.', flags: 64 });
+        }
+
         if (action === 'scam_reinstate') return reinstate(interaction, Number(arg));
         if (action === 'scam_purge')     return purge(interaction, arg);
         if (action === 'scam_dismiss')   return dismiss(interaction, Number(arg));

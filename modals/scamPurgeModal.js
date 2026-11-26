@@ -5,13 +5,13 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { hasAnyRole } = require('../utils/permissions');
 const { purgeAndBanUser } = require('../utils/purge');
-const { ADMIN_ROLE, DVMP_COMMAND_ROLE, SCAM_ALERT_CHANNEL } = require('../config');
+const { ADMIN_ROLE, SCAM_ALERT_CHANNEL } = require('../config');
 
 module.exports = {
     matches: (customId) => customId.startsWith('scam_purge_modal:'),
 
     async execute(interaction) {
-        if (!hasAnyRole(interaction.member, [ADMIN_ROLE, DVMP_COMMAND_ROLE])) {
+        if (!hasAnyRole(interaction.member, [ADMIN_ROLE])) {
             return interaction.reply({ content: '❌ Admins only.', flags: 64 });
         }
 
